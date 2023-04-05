@@ -2,11 +2,12 @@ import _ from "lodash";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { dummyBlockData, dummyBlockRoot } from "../dymmy";
 import BlockComponent from "./BlockComponent";
+import Utils from "./Utils";
 
 export interface Block {
   content?: string;
-  children?: string[];
-  parent?: string;
+  branch?: string[];
+  root?: string;
 }
 
 enum FocusOption {
@@ -101,26 +102,23 @@ export default function Editor() {
 
   const actionIndent = (blockId: string, refIndex: number) => {
     const block = blockData[blockId];
-    const parentKey = block?.parent;
+    const rootId = block?.root;
 
-    if (!parentKey) {
-      const currentRowKeyIndex = _.findIndex(
-        blockRoot,
-        (key) => key === blockId
-      );
+    if (!rootId) {
+      const currentRowKeyIndex = Utils.getIndexToArray(blockRoot, blockId);
 
       const newParentKey = blockRoot[currentRowKeyIndex - 1];
 
       if (newParentKey) {
-        block.parent = newParentKey;
+        block.root = newParentKey;
 
-        const newParentOriginChildren = blockData[newParentKey]?.children;
+        const newParentOriginChildren = blockData[newParentKey]?.branch;
         setBlockData((prev) => ({
           ...prev,
           [blockId]: block,
           [newParentKey]: {
             ...prev?.[newParentKey],
-            children: [...(newParentOriginChildren || []), blockId],
+            branch: [...(newParentOriginChildren || []), blockId],
           },
         }));
 
@@ -129,8 +127,8 @@ export default function Editor() {
       }
     }
 
-    if (parentKey) {
-      const parentChildrenOrder = blockData[parentKey].children;
+    if (rootId) {
+      const parentChildrenOrder = blockData[rootId].branch;
 
       const currentRowKeyIndex = _.findIndex(
         parentChildrenOrder,
@@ -140,15 +138,15 @@ export default function Editor() {
       const newParentKey = parentChildrenOrder?.[currentRowKeyIndex - 1];
 
       if (newParentKey) {
-        const newParentOriginChildren = blockData[newParentKey]?.children;
+        const newParentOriginChildren = blockData[newParentKey]?.branch;
         parentChildrenOrder.splice(currentRowKeyIndex, 1);
         setBlockData((prev) => ({
           ...prev,
-          [blockId]: { ...block, parent: newParentKey },
-          [parentKey]: { ...prev?.[parentKey], children: parentChildrenOrder },
+          [blockId]: { ...block, root: newParentKey },
+          [rootId]: { ...prev?.[rootId], branch: parentChildrenOrder },
           [newParentKey]: {
             ...prev?.[newParentKey],
-            children: [...(newParentOriginChildren || []), blockId],
+            branch: [...(newParentOriginChildren || []), blockId],
           },
         }));
 
@@ -167,7 +165,7 @@ export default function Editor() {
 
     const currentRowData = blockData[currentRowKey];
 
-    const currentRowParentKey = currentRowData?.parent;
+    const currentRowParentKey = currentRowData?.root;
 
     if (currentRowParentKey) {
     }
@@ -182,25 +180,25 @@ export default function Editor() {
     const generatedId = (new Date().getTime() + Math.random()) * 10000;
 
     const currentRowData = blockData[currentRowKey];
-    const childrenOrder = currentRowData?.children;
-    const parentKey = currentRowData.parent;
+    const childrenOrder = currentRowData?.branch;
+    const parentKey = currentRowData.root;
 
     // 추가 될 때 Children이 있으면
     if (childrenOrder) {
       setBlockData((prev) => {
         return {
           ...prev,
-          [generatedId]: { content: "", parent: currentRowKey },
+          [generatedId]: { content: "", root: currentRowKey },
           [currentRowKey]: {
             ...currentRowData,
-            children: [String(generatedId), ...childrenOrder],
+            branch: [String(generatedId), ...childrenOrder],
           },
         };
       });
     }
 
     if (!childrenOrder && parentKey) {
-      let parentChildrenOrder = blockData[parentKey].children;
+      let parentChildrenOrder = blockData[parentKey].branch;
       const currentRowKeyIndex = _.findIndex(
         parentChildrenOrder,
         (key) => key === currentRowKey
@@ -217,10 +215,10 @@ export default function Editor() {
       setBlockData((prev) => {
         return {
           ...prev,
-          [generatedId]: { content: "", parent: currentRowData.parent },
+          [generatedId]: { content: "", root: currentRowData.root },
           [parentKey]: {
             ...currentRowData,
-            children: parentChildrenOrder,
+            branch: parentChildrenOrder,
           },
         };
       });
@@ -250,11 +248,11 @@ export default function Editor() {
     console.log("actionRemove");
 
     const currentRowData = blockData[currentRowKey];
-    const parentKey = currentRowData?.parent;
+    const parentKey = currentRowData?.root;
 
     if (parentKey) {
       const parentData = blockData[parentKey];
-      let parentChilrenOrder = parentData?.children;
+      let parentChilrenOrder = parentData?.branch;
 
       const currentRowKeyIndex = _.findIndex(
         parentChilrenOrder,
@@ -331,7 +329,7 @@ export default function Editor() {
               handleKeyPress(blockId, element, refIndex);
             }}
           />
-          {renderRowList(data?.children, depth + 1)}
+          {renderRowList(data?.branch, depth + 1)}
         </Fragment>
       );
     });
