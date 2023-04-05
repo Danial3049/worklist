@@ -155,6 +155,18 @@ export default function Editor() {
     }, 0);
   };
 
+  const actionDepthBack = (currentRowKey: string, refIndex: number) => {
+    // 현재 아이템 lodash findkey 검토
+
+    const currentRowData = rowData[currentRowKey];
+
+    const currentRowParentKey = currentRowData?.parent;
+
+    if (currentRowParentKey) {
+    }
+    //parent를 부모의 parent로 변경
+  };
+
   const getInputElementRowKey = (refIndex: number): HTMLDivElement | null => {
     return inputRef.current[refIndex];
   };
