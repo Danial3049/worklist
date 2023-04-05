@@ -1,33 +1,33 @@
 import { useEffect, useState } from "react";
 import styled from "styled-components";
-import { RowData } from ".";
+import { Block } from ".";
 
-interface RowInputProps {
-  inputRef: (el: any, refIndex: number) => any;
-  rowData: RowData;
-  rowKey: string;
+interface BlockComponentProps {
   refIndex: number;
   depth: number;
+  block: Block;
+  blockId: string;
+  inputRef: (el: any, refIndex: number) => any;
   onChange: (changeContent: string | null) => void;
   onKeyDown: (
-    rowKey: string,
+    blockId: string,
     pressKey: React.KeyboardEvent<HTMLDivElement>,
     refIndex: number
   ) => void;
 }
-export default function RowInput({
-  inputRef,
-  rowData,
-  onChange,
-  onKeyDown,
-  rowKey,
+export default function BlockComponent({
   refIndex,
   depth,
-}: RowInputProps) {
+  block,
+  blockId,
+  inputRef,
+  onChange,
+  onKeyDown,
+}: BlockComponentProps) {
   const [defaultContent, setDefaultContent] = useState<string | null>();
 
   useEffect(() => {
-    setDefaultContent(rowData?.content);
+    setDefaultContent(block?.content);
   }, []);
 
   return (
@@ -47,7 +47,7 @@ export default function RowInput({
           }
         }}
         onKeyDown={(element) => {
-          if (onKeyDown) onKeyDown(rowKey, element, refIndex);
+          if (onKeyDown) onKeyDown(blockId, element, refIndex);
         }}
       >
         {defaultContent}

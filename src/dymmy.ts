@@ -1,5 +1,5 @@
-const dummyRowOrder = ["1", "2", "3"];
-const dummyRowData: any = {
+const dummyBlockRoot = ["1", "2", "3"];
+const dummyBlockData: any = {
   1: {
     content: "1",
     children: ["1-1"],
@@ -33,4 +33,4 @@ const dummyRowData: any = {
   "3-1-3": { content: "3-1-3", parent: "3-1" },
 };
 
-export { dummyRowData, dummyRowOrder };
+export { dummyBlockData, dummyBlockRoot };
