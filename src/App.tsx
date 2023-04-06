@@ -18,7 +18,8 @@ const AppLayout = styled.div(() => {
     // alignItems: "center",
     width: "100%",
     minHeight: "100vh",
-    backgroundColor: "green",
+    backgroundColor: "#181818",
+    color: "#EEEEEE",
   };
 });
 

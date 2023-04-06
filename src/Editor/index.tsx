@@ -1,7 +1,18 @@
+import _ from "lodash";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { dummyBlockData, dummyBlockTopRoot } from "../dymmy";
 import BlockComponent from "./BlockComponent";
-import Utils from "./Utils";
+import {
+  BlockType,
+  addBlockBranch,
+  addBlockLeaf,
+  addBlockTopLeaf,
+  getBlockType,
+  indentBlockNotTop,
+  indentBlockTop,
+  removeBlockLeaf,
+  removeBlockTopLeaf,
+} from "./BlockUtils";
 
 export interface Block {
   content?: string;
@@ -61,7 +72,6 @@ export default function Editor() {
 
     if (blockElement.key === "Enter" && blockElement.shiftKey !== true) {
       blockElement.preventDefault();
-
       actionAdd(blockId, blockRefIndex);
     }
 
@@ -71,19 +81,16 @@ export default function Editor() {
 
     if (blockElement.key === "Tab" && blockElement.shiftKey !== true) {
       blockElement.preventDefault();
-
       actionIndent(blockId, blockRefIndex);
     }
 
     if (blockElement.key === "ArrowDown") {
       blockElement.preventDefault();
-
       actionFocusMove(blockRefIndex, FocusOption.DOWN);
     }
 
     if (blockElement.key === "ArrowUp") {
       blockElement.preventDefault();
-
       actionFocusMove(blockRefIndex, FocusOption.UP);
     }
 
@@ -93,69 +100,63 @@ export default function Editor() {
       if (blockContent != null && blockContent?.length <= 0) {
         blockElement.preventDefault();
 
-        actionFocusMove(blockRefIndex, FocusOption.UP);
-        actionRemove(blockId);
+        const blockType = getBlockType(blockData[blockId]);
+
+        // topLeaf 인데 root가 하나 일 때는 삭제 하지 않음.
+        if (blockType === BlockType.TopLeaf && blockTopRoot.length <= 1) return;
+
+        if (
+          blockType !== BlockType.Branch &&
+          blockType !== BlockType.TopBranch
+        ) {
+          const blockIndex = _.indexOf(blockTopRoot, blockId);
+
+          if (blockIndex === 0) {
+            actionFocusMove(blockRefIndex, FocusOption.DOWN);
+          } else {
+            actionFocusMove(blockRefIndex, FocusOption.UP);
+          }
+
+          actionRemove(blockId);
+        }
       }
     }
   };
 
   const actionIndent = (blockId: string, refIndex: number) => {
     const block = blockData[blockId];
-    const blockRootId = block?.root;
+    const blockType = getBlockType(block);
 
-    if (!blockRootId) {
-      const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
+    switch (blockType) {
+      case BlockType.TopBranch:
+      case BlockType.TopLeaf:
+        {
+          const indetBlockTopResult = indentBlockTop(
+            blockId,
+            blockData,
+            blockTopRoot
+          );
 
-      const beRootId = blockTopRoot[blockOrderIndex - 1];
+          if (!indetBlockTopResult) return;
 
-      // TODO: 추가 리펙토링 필요
-      if (beRootId) {
-        block.root = beRootId;
+          const { newBlockData, newBlockTopRoot } = indetBlockTopResult;
 
-        const newParentOriginChildren = blockData[beRootId]?.branch;
+          setBlockTopRoot(newBlockTopRoot);
+          setBlockData({ ...newBlockData });
+        }
+        break;
+      case BlockType.Branch:
+      case BlockType.Leaf:
+        {
+          const newBlockData = indentBlockNotTop(blockId, blockData);
 
-        setBlockData((prev) => ({
-          ...prev,
-          [blockId]: block,
-          [beRootId]: {
-            ...prev?.[beRootId],
-            branch: [...(newParentOriginChildren || []), blockId],
-          },
-        }));
+          if (!newBlockData) return;
 
-        blockTopRoot.splice(blockOrderIndex, 1);
-        setBlockTopRoot(blockTopRoot);
-      }
-    }
-
-    if (blockRootId) {
-      const blockBranchOrder = blockData[blockRootId].branch;
-
-      if (!blockBranchOrder) return;
-
-      const blockOrderIndex = Utils.getIndexToArray(blockBranchOrder, blockId);
-
-      const beRootId = blockBranchOrder?.[blockOrderIndex - 1];
-      // TODO: 추가 리펙토링 필요
-      if (beRootId) {
-        const newParentOriginChildren = blockData[beRootId]?.branch;
-        blockBranchOrder.splice(blockOrderIndex, 1);
-        setBlockData((prev) => ({
-          ...prev,
-          [blockId]: { ...block, root: beRootId },
-          [blockRootId]: {
-            ...prev?.[blockRootId],
-            branch: blockBranchOrder,
-          },
-          [beRootId]: {
-            ...prev?.[beRootId],
-            branch: [...(newParentOriginChildren || []), blockId],
-          },
-        }));
-
-        blockTopRoot.splice(blockOrderIndex, 0);
-        setBlockTopRoot(blockTopRoot);
-      }
+          setBlockData({ ...newBlockData });
+        }
+        break;
+      default:
+        break;
     }
 
     setTimeout(() => {
@@ -180,69 +181,37 @@ export default function Editor() {
   };
 
   const actionAdd = (blockId: string, refIndex: number) => {
-    const generatedId = (new Date().getTime() + Math.random()) * 10000;
-
     const block = blockData[blockId];
-    const blockBranchOrder = block?.branch;
-    const blockRootId = block.root;
+    const blockType = getBlockType(block);
 
-    // TODO: 추가 리펙토링 필요
-    if (blockBranchOrder) {
-      setBlockData((prev) => {
-        return {
-          ...prev,
-          [generatedId]: { content: "", root: blockId },
-          [blockId]: {
-            ...block,
-            branch: [String(generatedId), ...blockBranchOrder],
-          },
-        };
-      });
-    }
+    switch (blockType) {
+      case BlockType.TopLeaf:
+        {
+          const { newBlockData, newBlockTopRoot } = addBlockTopLeaf(
+            blockId,
+            blockData,
+            blockTopRoot
+          );
 
-    // TODO: 추가 리펙토링 필요
-    if (!blockBranchOrder && blockRootId) {
-      let blockRootBranchOrder = blockData[blockRootId].branch;
-
-      if (!blockRootBranchOrder) return;
-
-      const blockOrderIndex = Utils.getIndexToArray(
-        blockRootBranchOrder,
-        blockId
-      );
-
-      if (blockRootBranchOrder) {
-        blockRootBranchOrder.splice(
-          blockOrderIndex + 1,
-          0,
-          String(generatedId)
-        );
-      }
-
-      setBlockData((prev) => {
-        return {
-          ...prev,
-          [generatedId]: { content: "", root: block.root },
-          [blockRootId]: {
-            ...block,
-            branch: blockRootBranchOrder,
-          },
-        };
-      });
-    }
-
-    // TODO: 추가 리펙토링 필요
-    if (!blockBranchOrder && !blockRootId) {
-      const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
-
-      blockTopRoot.splice(blockOrderIndex + 1, 0, String(generatedId));
-      setBlockTopRoot(blockTopRoot);
-      setBlockData((prev) => {
-        return {
-          ...prev,
-          [generatedId]: { content: "" },
-        };
-      });
+          setBlockTopRoot(newBlockTopRoot);
+          setBlockData({ ...newBlockData });
+        }
+        break;
+      case BlockType.Leaf:
+        {
+          const newBlockData = addBlockLeaf(blockId, blockData);
+          setBlockData({ ...newBlockData });
+        }
+        break;
+      case BlockType.TopBranch:
+      case BlockType.Branch:
+        {
+          const newBlockData = addBlockBranch(blockId, blockData);
+          setBlockData({ ...newBlockData });
+        }
+        break;
+      default:
+        break;
     }
 
     setTimeout(() => {
@@ -254,57 +223,41 @@ export default function Editor() {
     console.log("actionRemove");
 
     const block = blockData[blockId];
-    const blockRootId = block?.root;
-    // TODO: 추가 리펙토링 필요
-    if (blockRootId) {
-      const blockRoot = blockData[blockRootId];
-      let blockRootBranchOrder = blockRoot?.branch;
+    const blockType = getBlockType(block);
 
-      if (!blockRootBranchOrder) return;
+    switch (blockType) {
+      case BlockType.TopLeaf:
+        {
+          const { newBlockData, newBlockTopRoot } = removeBlockTopLeaf(
+            blockId,
+            blockData,
+            blockTopRoot
+          );
 
-      const blockOrderIndex = Utils.getIndexToArray(
-        blockRootBranchOrder,
-        blockId
-      );
+          setBlockTopRoot(newBlockTopRoot);
+          setBlockData({ ...newBlockData });
+        }
+        break;
+      case BlockType.Leaf:
+        {
+          const newBlockData = removeBlockLeaf(blockId, blockData);
 
-      blockRootBranchOrder?.splice(blockOrderIndex, 1);
+          setBlockData({ ...newBlockData });
+        }
 
-      if (Number(blockRootBranchOrder?.length) <= 0) {
-        blockRootBranchOrder = undefined;
-      }
-
-      setBlockData((prev) => {
-        const { [blockId]: string, ...obj } = prev;
-        return {
-          ...obj,
-          [blockRootId]: {
-            ...prev?.[blockRootId],
-            branch: blockRootBranchOrder,
-          },
-        };
-      });
-
-      return;
+        break;
+      case BlockType.TopBranch:
+      case BlockType.Branch:
+      default:
+        break;
     }
-    // TODO: 추가 리펙토링 필요
-    const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
-
-    blockTopRoot.splice(blockOrderIndex, 1);
-    setBlockTopRoot(blockTopRoot);
-
-    const { [blockId]: string, ...obj } = blockData;
-    setBlockData(obj);
   };
 
   const actionFocusMove = (blockRefIndex: number, focusOption: FocusOption) => {
-    console.log("blockRefIndex", blockRefIndex);
-    console.log("focusOption", FocusOption[focusOption]);
-
     const beMovedBlockRef = blockRef.current[blockRefIndex + focusOption];
 
     setTimeout(() => {
       beMovedBlockRef?.focus();
-      console.log("beMovedBlockRef", beMovedBlockRef);
       if (beMovedBlockRef != null) {
         window.getSelection()?.selectAllChildren(beMovedBlockRef);
         window.getSelection()?.collapseToEnd();
