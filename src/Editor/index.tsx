@@ -1,4 +1,3 @@
-import _ from "lodash";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { dummyBlockData, dummyBlockTopRoot } from "../dymmy";
 import BlockComponent from "./BlockComponent";
