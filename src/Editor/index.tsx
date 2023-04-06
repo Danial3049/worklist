@@ -1,232 +1,244 @@
 import _ from "lodash";
-import { useEffect, useState, useRef, Fragment } from "react";
-import RowInput from "./RowInput";
-import { dummyRowData, dummyRowOrder } from "../dymmy";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { dummyBlockData, dummyBlockTopRoot } from "../dymmy";
+import BlockComponent from "./BlockComponent";
+import Utils from "./Utils";
 
-export interface RowData {
+export interface Block {
   content?: string;
-  children?: string[];
-  parent?: string;
+  branch?: string[];
+  root?: string;
+}
+
+enum FocusOption {
+  UP = -1,
+  MAINTAIN = 0,
+  DOWN = 1,
 }
 
 export default function Editor() {
-  const [rowOrder, setRowOrder] = useState<string[]>([]);
-  const [rowData, setRowData] = useState<{ [id: string]: RowData }>({});
+  const [blockTopRoot, setBlockTopRoot] = useState<string[]>([]);
+  const [blockData, setBlockData] = useState<{ [id: string]: Block }>({});
 
-  const inputRef = useRef<(HTMLDivElement | null)[]>([]);
+  const blockRef = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    setRowOrder(dummyRowOrder);
-    setRowData(dummyRowData);
+    setBlockTopRoot(dummyBlockTopRoot);
+    setBlockData(dummyBlockData);
   }, []);
 
   // TODO: Debug 용도
   useEffect(() => {
-    if (rowOrder.length <= 0) return;
-
-    console.log("rowOrder", rowOrder);
-  }, [rowOrder]);
-
-  // TODO: Debug 용도
-  useEffect(() => {
-    if (Object.keys(rowData).length <= 0) return;
-    console.log("rowData", rowData);
-  }, [rowData]);
+    if (blockTopRoot.length <= 0) return;
+    console.log("blockTopRoot", blockTopRoot);
+  }, [blockTopRoot]);
 
   // TODO: Debug 용도
   useEffect(() => {
-    if (inputRef.current.length <= 0) return;
-    console.log("inputRef", inputRef.current);
-  }, [inputRef.current]);
+    if (Object.keys(blockData).length <= 0) return;
+    console.log("blockData", blockData);
+  }, [blockData]);
 
-  const updateInputData = (rowId: string, newContent: string | null) => {
-    setRowData((prev) => ({
+  const updateBlockContent = (blockId: string, newContent: string | null) => {
+    const updateBlockData = blockData[blockId];
+
+    if (!updateBlockData) return;
+
+    updateBlockData.content = newContent || "";
+
+    setBlockData((prev) => ({
       ...prev,
-      [rowId]: { ...prev[rowId], content: newContent || "" },
+      [blockId]: updateBlockData,
     }));
   };
 
   const handleKeyPress = (
-    rowKey: string,
-    element: React.KeyboardEvent<HTMLDivElement>,
-    refIndex: number
+    blockId: string,
+    blockElement: React.KeyboardEvent<HTMLDivElement>,
+    blockRefIndex: number
   ) => {
     //TODO: Debug 용도
-    console.log("keyPress = ", element.key);
+    console.log("Press key = ", blockElement.key);
 
-    if (element.key === "Enter" && element.shiftKey !== true) {
-      element.preventDefault();
-      actionAdd(rowKey, refIndex);
+    if (blockElement.key === "Enter" && blockElement.shiftKey !== true) {
+      blockElement.preventDefault();
+
+      actionAdd(blockId, blockRefIndex);
     }
 
-    if (element.key === "Tab" && element.shiftKey === true) {
-      element.preventDefault();
+    if (blockElement.key === "Tab" && blockElement.shiftKey === true) {
+      blockElement.preventDefault();
     }
 
-    if (element.key === "Tab" && element.shiftKey !== true) {
-      element.preventDefault();
-      actionDepth(rowKey, refIndex);
+    if (blockElement.key === "Tab" && blockElement.shiftKey !== true) {
+      blockElement.preventDefault();
+
+      actionIndent(blockId, blockRefIndex);
     }
 
-    if (element.key === "ArrowDown") {
-      element.preventDefault();
-      actionFocusMove(refIndex, 1);
+    if (blockElement.key === "ArrowDown") {
+      blockElement.preventDefault();
+
+      actionFocusMove(blockRefIndex, FocusOption.DOWN);
     }
 
-    if (element.key === "ArrowUp") {
-      element.preventDefault();
-      actionFocusMove(refIndex, -1);
+    if (blockElement.key === "ArrowUp") {
+      blockElement.preventDefault();
+
+      actionFocusMove(blockRefIndex, FocusOption.UP);
     }
 
-    if (element.key === "Backspace") {
-      const currentElementTextContent =
-        getInputElementRowKey(refIndex)?.textContent;
-      if (
-        currentElementTextContent != null &&
-        currentElementTextContent?.length <= 0
-      ) {
-        element.preventDefault();
-        actionFocusMove(refIndex, -1);
-        actionRemove(rowKey);
+    if (blockElement.key === "Backspace") {
+      const blockContent = getBlockElRefIndex(blockRefIndex)?.textContent;
+
+      if (blockContent != null && blockContent?.length <= 0) {
+        blockElement.preventDefault();
+
+        actionFocusMove(blockRefIndex, FocusOption.UP);
+        actionRemove(blockId);
       }
     }
   };
 
-  const actionDepth = (currentRowKey: string, refIndex: number) => {
-    const currentRowData = rowData[currentRowKey];
-    const parentKey = currentRowData?.parent;
+  const actionIndent = (blockId: string, refIndex: number) => {
+    const block = blockData[blockId];
+    const blockRootId = block?.root;
 
-    if (!parentKey) {
-      const currentRowKeyIndex = _.findIndex(
-        rowOrder,
-        (key) => key === currentRowKey
-      );
+    if (!blockRootId) {
+      const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
 
-      const newParentKey = rowOrder[currentRowKeyIndex - 1];
+      const beRootId = blockTopRoot[blockOrderIndex - 1];
 
-      if (newParentKey) {
-        currentRowData.parent = newParentKey;
+      // TODO: 추가 리펙토링 필요
+      if (beRootId) {
+        block.root = beRootId;
 
-        const newParentOriginChildren = rowData[newParentKey]?.children;
-        setRowData((prev) => ({
+        const newParentOriginChildren = blockData[beRootId]?.branch;
+
+        setBlockData((prev) => ({
           ...prev,
-          [currentRowKey]: currentRowData,
-          [newParentKey]: {
-            ...prev?.[newParentKey],
-            children: [...(newParentOriginChildren || []), currentRowKey],
+          [blockId]: block,
+          [beRootId]: {
+            ...prev?.[beRootId],
+            branch: [...(newParentOriginChildren || []), blockId],
           },
         }));
 
-        rowOrder.splice(currentRowKeyIndex, 1);
-        setRowOrder(rowOrder);
+        blockTopRoot.splice(blockOrderIndex, 1);
+        setBlockTopRoot(blockTopRoot);
       }
     }
 
-    if (parentKey) {
-      const parentChildrenOrder = rowData[parentKey].children;
+    if (blockRootId) {
+      const blockBranchOrder = blockData[blockRootId].branch;
 
-      const currentRowKeyIndex = _.findIndex(
-        parentChildrenOrder,
-        (key) => key === currentRowKey
-      );
+      if (!blockBranchOrder) return;
 
-      const newParentKey = parentChildrenOrder?.[currentRowKeyIndex - 1];
+      const blockOrderIndex = Utils.getIndexToArray(blockBranchOrder, blockId);
 
-      if (newParentKey) {
-        const newParentOriginChildren = rowData[newParentKey]?.children;
-        parentChildrenOrder.splice(currentRowKeyIndex, 1);
-        setRowData((prev) => ({
+      const beRootId = blockBranchOrder?.[blockOrderIndex - 1];
+      // TODO: 추가 리펙토링 필요
+      if (beRootId) {
+        const newParentOriginChildren = blockData[beRootId]?.branch;
+        blockBranchOrder.splice(blockOrderIndex, 1);
+        setBlockData((prev) => ({
           ...prev,
-          [currentRowKey]: { ...currentRowData, parent: newParentKey },
-          [parentKey]: { ...prev?.[parentKey], children: parentChildrenOrder },
-          [newParentKey]: {
-            ...prev?.[newParentKey],
-            children: [...(newParentOriginChildren || []), currentRowKey],
+          [blockId]: { ...block, root: beRootId },
+          [blockRootId]: {
+            ...prev?.[blockRootId],
+            branch: blockBranchOrder,
+          },
+          [beRootId]: {
+            ...prev?.[beRootId],
+            branch: [...(newParentOriginChildren || []), blockId],
           },
         }));
 
-        rowOrder.splice(currentRowKeyIndex, 0);
-        setRowOrder(rowOrder);
+        blockTopRoot.splice(blockOrderIndex, 0);
+        setBlockTopRoot(blockTopRoot);
       }
     }
 
     setTimeout(() => {
-      actionFocusMove(refIndex, 0);
+      actionFocusMove(refIndex, FocusOption.MAINTAIN);
     }, 0);
   };
 
-  const actionDepthBack = (currentRowKey: string, refIndex: number) => {
+  const actionOutdent = (blockId: string, refIndex: number) => {
     // 현재 아이템 lodash findkey 검토
 
-    const currentRowData = rowData[currentRowKey];
+    const block = blockData[blockId];
 
-    const currentRowParentKey = currentRowData?.parent;
+    const blockRootId = block?.root;
 
-    if (currentRowParentKey) {
+    if (blockRootId) {
     }
     //parent를 부모의 parent로 변경
   };
 
-  const getInputElementRowKey = (refIndex: number): HTMLDivElement | null => {
-    return inputRef.current[refIndex];
+  const getBlockElRefIndex = (blockRefIndex: number): HTMLDivElement | null => {
+    return blockRef.current[blockRefIndex];
   };
 
-  const actionAdd = (currentRowKey: string, refIndex: number) => {
+  const actionAdd = (blockId: string, refIndex: number) => {
     const generatedId = (new Date().getTime() + Math.random()) * 10000;
 
-    const currentRowData = rowData[currentRowKey];
-    const childrenOrder = currentRowData?.children;
-    const parentKey = currentRowData.parent;
+    const block = blockData[blockId];
+    const blockBranchOrder = block?.branch;
+    const blockRootId = block.root;
 
-    // 추가 될 때 Children이 있으면
-    if (childrenOrder) {
-      setRowData((prev) => {
+    // TODO: 추가 리펙토링 필요
+    if (blockBranchOrder) {
+      setBlockData((prev) => {
         return {
           ...prev,
-          [generatedId]: { content: "", parent: currentRowKey },
-          [currentRowKey]: {
-            ...currentRowData,
-            children: [String(generatedId), ...childrenOrder],
+          [generatedId]: { content: "", root: blockId },
+          [blockId]: {
+            ...block,
+            branch: [String(generatedId), ...blockBranchOrder],
           },
         };
       });
     }
 
-    if (!childrenOrder && parentKey) {
-      let parentChildrenOrder = rowData[parentKey].children;
-      const currentRowKeyIndex = _.findIndex(
-        parentChildrenOrder,
-        (key) => key === currentRowKey
+    // TODO: 추가 리펙토링 필요
+    if (!blockBranchOrder && blockRootId) {
+      let blockRootBranchOrder = blockData[blockRootId].branch;
+
+      if (!blockRootBranchOrder) return;
+
+      const blockOrderIndex = Utils.getIndexToArray(
+        blockRootBranchOrder,
+        blockId
       );
 
-      if (parentChildrenOrder) {
-        parentChildrenOrder.splice(
-          currentRowKeyIndex + 1,
+      if (blockRootBranchOrder) {
+        blockRootBranchOrder.splice(
+          blockOrderIndex + 1,
           0,
           String(generatedId)
         );
       }
 
-      setRowData((prev) => {
+      setBlockData((prev) => {
         return {
           ...prev,
-          [generatedId]: { content: "", parent: currentRowData.parent },
-          [parentKey]: {
-            ...currentRowData,
-            children: parentChildrenOrder,
+          [generatedId]: { content: "", root: block.root },
+          [blockRootId]: {
+            ...block,
+            branch: blockRootBranchOrder,
           },
         };
       });
     }
 
-    if (!childrenOrder && !parentKey) {
-      const currentRowKeyIndex = _.findIndex(
-        rowOrder,
-        (key) => key === currentRowKey
-      );
-      rowOrder.splice(currentRowKeyIndex + 1, 0, String(generatedId));
-      setRowOrder(rowOrder);
-      setRowData((prev) => {
+    // TODO: 추가 리펙토링 필요
+    if (!blockBranchOrder && !blockRootId) {
+      const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
+
+      blockTopRoot.splice(blockOrderIndex + 1, 0, String(generatedId));
+      setBlockTopRoot(blockTopRoot);
+      setBlockData((prev) => {
         return {
           ...prev,
           [generatedId]: { content: "" },
@@ -235,64 +247,67 @@ export default function Editor() {
     }
 
     setTimeout(() => {
-      actionFocusMove(refIndex, 1);
+      actionFocusMove(refIndex, FocusOption.DOWN);
     }, 0);
   };
 
-  const actionRemove = (currentRowKey: string) => {
+  const actionRemove = (blockId: string) => {
     console.log("actionRemove");
 
-    const currentRowData = rowData[currentRowKey];
-    const parentKey = currentRowData?.parent;
+    const block = blockData[blockId];
+    const blockRootId = block?.root;
+    // TODO: 추가 리펙토링 필요
+    if (blockRootId) {
+      const blockRoot = blockData[blockRootId];
+      let blockRootBranchOrder = blockRoot?.branch;
 
-    if (parentKey) {
-      const parentData = rowData[parentKey];
-      let parentChilrenOrder = parentData?.children;
+      if (!blockRootBranchOrder) return;
 
-      const currentRowKeyIndex = _.findIndex(
-        parentChilrenOrder,
-        (key) => key === currentRowKey
+      const blockOrderIndex = Utils.getIndexToArray(
+        blockRootBranchOrder,
+        blockId
       );
 
-      parentChilrenOrder?.splice(currentRowKeyIndex, 1);
+      blockRootBranchOrder?.splice(blockOrderIndex, 1);
 
-      if (Number(parentChilrenOrder?.length) <= 0) {
-        parentChilrenOrder = undefined;
+      if (Number(blockRootBranchOrder?.length) <= 0) {
+        blockRootBranchOrder = undefined;
       }
 
-      setRowData((prev) => {
-        const { [currentRowKey]: string, ...obj } = prev;
+      setBlockData((prev) => {
+        const { [blockId]: string, ...obj } = prev;
         return {
           ...obj,
-          [parentKey]: { ...prev?.[parentKey], children: parentChilrenOrder },
+          [blockRootId]: {
+            ...prev?.[blockRootId],
+            branch: blockRootBranchOrder,
+          },
         };
       });
 
       return;
     }
+    // TODO: 추가 리펙토링 필요
+    const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
 
-    const currentRowKeyIndex = _.findIndex(
-      rowOrder,
-      (key) => key === currentRowKey
-    );
+    blockTopRoot.splice(blockOrderIndex, 1);
+    setBlockTopRoot(blockTopRoot);
 
-    rowOrder.splice(currentRowKeyIndex, 1);
-    setRowOrder(rowOrder);
-
-    const { [currentRowKey]: string, ...obj } = rowData;
-    setRowData(obj);
+    const { [blockId]: string, ...obj } = blockData;
+    setBlockData(obj);
   };
 
-  const actionFocusMove = (refIndex: number, amountMovement: number) => {
-    console.log("refIndex", refIndex);
-    console.log("amountMovement", amountMovement);
-    const nextInputRef = inputRef.current[refIndex + amountMovement];
+  const actionFocusMove = (blockRefIndex: number, focusOption: FocusOption) => {
+    console.log("blockRefIndex", blockRefIndex);
+    console.log("focusOption", FocusOption[focusOption]);
+
+    const beMovedBlockRef = blockRef.current[blockRefIndex + focusOption];
 
     setTimeout(() => {
-      nextInputRef?.focus();
-      console.log("nextInputRef", nextInputRef);
-      if (nextInputRef != null) {
-        window.getSelection()?.selectAllChildren(nextInputRef);
+      beMovedBlockRef?.focus();
+      console.log("beMovedBlockRef", beMovedBlockRef);
+      if (beMovedBlockRef != null) {
+        window.getSelection()?.selectAllChildren(beMovedBlockRef);
         window.getSelection()?.collapseToEnd();
       }
     }, 0);
@@ -300,58 +315,34 @@ export default function Editor() {
 
   let rowCount = -1;
   const renderRowList = (
-    rowOrder: string[] | undefined,
-    depth: number
+    blockTopRoot: string[] | undefined,
+    depth: number = 0
   ): any => {
-    return rowOrder?.map((key) => {
-      const data = rowData[key];
+    return blockTopRoot?.map((blockId) => {
+      const data = blockData[blockId];
       rowCount++;
       return (
-        <Fragment key={key}>
-          <RowInput
+        <Fragment key={blockId}>
+          <BlockComponent
+            block={data}
             depth={depth}
-            inputRef={(el, refIndex) => {
-              inputRef.current[refIndex] = el;
-            }}
+            blockId={blockId}
             refIndex={rowCount}
-            rowKey={key}
-            rowData={data}
-            onChange={(changeContent) => {
-              updateInputData(key, changeContent);
+            inputRef={(el, refIndex) => {
+              blockRef.current[refIndex] = el;
             }}
-            onKeyDown={(rowKey, element, refIndex) => {
-              handleKeyPress(rowKey, element, refIndex);
+            onChange={(content) => {
+              updateBlockContent(blockId, content);
+            }}
+            onKeyDown={(blockId, element, refIndex) => {
+              handleKeyPress(blockId, element, refIndex);
             }}
           />
-          {renderRowList(data?.children, depth + 1)}
+          {renderRowList(data?.branch, depth + 1)}
         </Fragment>
       );
     });
   };
 
-  return (
-    <>
-      {renderRowList(rowOrder, 0)}
-      {/* {rowOrder.map((key, index) => {
-        const data = rowData[key];
-        return (
-          <RowInput
-            inputRef={(el) => {
-              console.log("el", el);
-              inputRef.current[index] = el;
-            }}
-            key={key}
-            rowKey={key}
-            rowData={data}
-            onChange={(changeContent) => {
-              updateInputData(key, changeContent);
-            }}
-            onKeyDown={(rowKey, element) => {
-              handleKeyPress(rowKey, element);
-            }}
-          />
-        );
-      })} */}
-    </>
-  );
+  return <>{renderRowList(blockTopRoot)}</>;
 }
