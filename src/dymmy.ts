@@ -1,6 +1,6 @@
 import { Block } from "./Editor";
 
-const dummyBlockRoot = ["1", "2", "3"];
+const dummyBlockTopRoot = ["1", "2", "3"];
 const dummyBlockData: { [id: string]: Block } = {
   1: {
     content: "1",
@@ -35,4 +35,4 @@ const dummyBlockData: { [id: string]: Block } = {
   "3-1-3": { content: "3-1-3", root: "3-1" },
 };
 
-export { dummyBlockData, dummyBlockRoot };
+export { dummyBlockData, dummyBlockTopRoot };

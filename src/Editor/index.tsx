@@ -1,6 +1,6 @@
 import _ from "lodash";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { dummyBlockData, dummyBlockRoot } from "../dymmy";
+import { dummyBlockData, dummyBlockTopRoot } from "../dymmy";
 import BlockComponent from "./BlockComponent";
 import Utils from "./Utils";
 
@@ -17,21 +17,21 @@ enum FocusOption {
 }
 
 export default function Editor() {
-  const [blockRoot, setBlockRoot] = useState<string[]>([]);
+  const [blockTopRoot, setBlockTopRoot] = useState<string[]>([]);
   const [blockData, setBlockData] = useState<{ [id: string]: Block }>({});
 
   const blockRef = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    setBlockRoot(dummyBlockRoot);
+    setBlockTopRoot(dummyBlockTopRoot);
     setBlockData(dummyBlockData);
   }, []);
 
   // TODO: Debug 용도
   useEffect(() => {
-    if (blockRoot.length <= 0) return;
-    console.log("blockRoot", blockRoot);
-  }, [blockRoot]);
+    if (blockTopRoot.length <= 0) return;
+    console.log("blockTopRoot", blockTopRoot);
+  }, [blockTopRoot]);
 
   // TODO: Debug 용도
   useEffect(() => {
@@ -102,56 +102,60 @@ export default function Editor() {
 
   const actionIndent = (blockId: string, refIndex: number) => {
     const block = blockData[blockId];
-    const rootId = block?.root;
+    const blockRootId = block?.root;
 
-    if (!rootId) {
-      const currentRowKeyIndex = Utils.getIndexToArray(blockRoot, blockId);
+    if (!blockRootId) {
+      const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
 
-      const newParentKey = blockRoot[currentRowKeyIndex - 1];
+      const beRootId = blockTopRoot[blockOrderIndex - 1];
 
-      if (newParentKey) {
-        block.root = newParentKey;
+      // TODO: 추가 리펙토링 필요
+      if (beRootId) {
+        block.root = beRootId;
 
-        const newParentOriginChildren = blockData[newParentKey]?.branch;
+        const newParentOriginChildren = blockData[beRootId]?.branch;
+
         setBlockData((prev) => ({
           ...prev,
           [blockId]: block,
-          [newParentKey]: {
-            ...prev?.[newParentKey],
+          [beRootId]: {
+            ...prev?.[beRootId],
             branch: [...(newParentOriginChildren || []), blockId],
           },
         }));
 
-        blockRoot.splice(currentRowKeyIndex, 1);
-        setBlockRoot(blockRoot);
+        blockTopRoot.splice(blockOrderIndex, 1);
+        setBlockTopRoot(blockTopRoot);
       }
     }
 
-    if (rootId) {
-      const parentChildrenOrder = blockData[rootId].branch;
+    if (blockRootId) {
+      const blockBranchOrder = blockData[blockRootId].branch;
 
-      const currentRowKeyIndex = _.findIndex(
-        parentChildrenOrder,
-        (id) => id === blockId
-      );
+      if (!blockBranchOrder) return;
 
-      const newParentKey = parentChildrenOrder?.[currentRowKeyIndex - 1];
+      const blockOrderIndex = Utils.getIndexToArray(blockBranchOrder, blockId);
 
-      if (newParentKey) {
-        const newParentOriginChildren = blockData[newParentKey]?.branch;
-        parentChildrenOrder.splice(currentRowKeyIndex, 1);
+      const beRootId = blockBranchOrder?.[blockOrderIndex - 1];
+      // TODO: 추가 리펙토링 필요
+      if (beRootId) {
+        const newParentOriginChildren = blockData[beRootId]?.branch;
+        blockBranchOrder.splice(blockOrderIndex, 1);
         setBlockData((prev) => ({
           ...prev,
-          [blockId]: { ...block, root: newParentKey },
-          [rootId]: { ...prev?.[rootId], branch: parentChildrenOrder },
-          [newParentKey]: {
-            ...prev?.[newParentKey],
+          [blockId]: { ...block, root: beRootId },
+          [blockRootId]: {
+            ...prev?.[blockRootId],
+            branch: blockBranchOrder,
+          },
+          [beRootId]: {
+            ...prev?.[beRootId],
             branch: [...(newParentOriginChildren || []), blockId],
           },
         }));
 
-        blockRoot.splice(currentRowKeyIndex, 0);
-        setBlockRoot(blockRoot);
+        blockTopRoot.splice(blockOrderIndex, 0);
+        setBlockTopRoot(blockTopRoot);
       }
     }
 
@@ -160,14 +164,14 @@ export default function Editor() {
     }, 0);
   };
 
-  const actionOutdent = (currentRowKey: string, refIndex: number) => {
+  const actionOutdent = (blockId: string, refIndex: number) => {
     // 현재 아이템 lodash findkey 검토
 
-    const currentRowData = blockData[currentRowKey];
+    const block = blockData[blockId];
 
-    const currentRowParentKey = currentRowData?.root;
+    const blockRootId = block?.root;
 
-    if (currentRowParentKey) {
+    if (blockRootId) {
     }
     //parent를 부모의 parent로 변경
   };
@@ -176,37 +180,41 @@ export default function Editor() {
     return blockRef.current[blockRefIndex];
   };
 
-  const actionAdd = (currentRowKey: string, refIndex: number) => {
+  const actionAdd = (blockId: string, refIndex: number) => {
     const generatedId = (new Date().getTime() + Math.random()) * 10000;
 
-    const currentRowData = blockData[currentRowKey];
-    const childrenOrder = currentRowData?.branch;
-    const parentKey = currentRowData.root;
+    const block = blockData[blockId];
+    const blockBranchOrder = block?.branch;
+    const blockRootId = block.root;
 
-    // 추가 될 때 Children이 있으면
-    if (childrenOrder) {
+    // TODO: 추가 리펙토링 필요
+    if (blockBranchOrder) {
       setBlockData((prev) => {
         return {
           ...prev,
-          [generatedId]: { content: "", root: currentRowKey },
-          [currentRowKey]: {
-            ...currentRowData,
-            branch: [String(generatedId), ...childrenOrder],
+          [generatedId]: { content: "", root: blockId },
+          [blockId]: {
+            ...block,
+            branch: [String(generatedId), ...blockBranchOrder],
           },
         };
       });
     }
 
-    if (!childrenOrder && parentKey) {
-      let parentChildrenOrder = blockData[parentKey].branch;
-      const currentRowKeyIndex = _.findIndex(
-        parentChildrenOrder,
-        (key) => key === currentRowKey
+    // TODO: 추가 리펙토링 필요
+    if (!blockBranchOrder && blockRootId) {
+      let blockRootBranchOrder = blockData[blockRootId].branch;
+
+      if (!blockRootBranchOrder) return;
+
+      const blockOrderIndex = Utils.getIndexToArray(
+        blockRootBranchOrder,
+        blockId
       );
 
-      if (parentChildrenOrder) {
-        parentChildrenOrder.splice(
-          currentRowKeyIndex + 1,
+      if (blockRootBranchOrder) {
+        blockRootBranchOrder.splice(
+          blockOrderIndex + 1,
           0,
           String(generatedId)
         );
@@ -215,22 +223,21 @@ export default function Editor() {
       setBlockData((prev) => {
         return {
           ...prev,
-          [generatedId]: { content: "", root: currentRowData.root },
-          [parentKey]: {
-            ...currentRowData,
-            branch: parentChildrenOrder,
+          [generatedId]: { content: "", root: block.root },
+          [blockRootId]: {
+            ...block,
+            branch: blockRootBranchOrder,
           },
         };
       });
     }
 
-    if (!childrenOrder && !parentKey) {
-      const currentRowKeyIndex = _.findIndex(
-        blockRoot,
-        (key) => key === currentRowKey
-      );
-      blockRoot.splice(currentRowKeyIndex + 1, 0, String(generatedId));
-      setBlockRoot(blockRoot);
+    // TODO: 추가 리펙토링 필요
+    if (!blockBranchOrder && !blockRootId) {
+      const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
+
+      blockTopRoot.splice(blockOrderIndex + 1, 0, String(generatedId));
+      setBlockTopRoot(blockTopRoot);
       setBlockData((prev) => {
         return {
           ...prev,
@@ -244,47 +251,49 @@ export default function Editor() {
     }, 0);
   };
 
-  const actionRemove = (currentRowKey: string) => {
+  const actionRemove = (blockId: string) => {
     console.log("actionRemove");
 
-    const currentRowData = blockData[currentRowKey];
-    const parentKey = currentRowData?.root;
+    const block = blockData[blockId];
+    const blockRootId = block?.root;
+    // TODO: 추가 리펙토링 필요
+    if (blockRootId) {
+      const blockRoot = blockData[blockRootId];
+      let blockRootBranchOrder = blockRoot?.branch;
 
-    if (parentKey) {
-      const parentData = blockData[parentKey];
-      let parentChilrenOrder = parentData?.branch;
+      if (!blockRootBranchOrder) return;
 
-      const currentRowKeyIndex = _.findIndex(
-        parentChilrenOrder,
-        (key) => key === currentRowKey
+      const blockOrderIndex = Utils.getIndexToArray(
+        blockRootBranchOrder,
+        blockId
       );
 
-      parentChilrenOrder?.splice(currentRowKeyIndex, 1);
+      blockRootBranchOrder?.splice(blockOrderIndex, 1);
 
-      if (Number(parentChilrenOrder?.length) <= 0) {
-        parentChilrenOrder = undefined;
+      if (Number(blockRootBranchOrder?.length) <= 0) {
+        blockRootBranchOrder = undefined;
       }
 
       setBlockData((prev) => {
-        const { [currentRowKey]: string, ...obj } = prev;
+        const { [blockId]: string, ...obj } = prev;
         return {
           ...obj,
-          [parentKey]: { ...prev?.[parentKey], children: parentChilrenOrder },
+          [blockRootId]: {
+            ...prev?.[blockRootId],
+            branch: blockRootBranchOrder,
+          },
         };
       });
 
       return;
     }
+    // TODO: 추가 리펙토링 필요
+    const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
 
-    const currentRowKeyIndex = _.findIndex(
-      blockRoot,
-      (key) => key === currentRowKey
-    );
+    blockTopRoot.splice(blockOrderIndex, 1);
+    setBlockTopRoot(blockTopRoot);
 
-    blockRoot.splice(currentRowKeyIndex, 1);
-    setBlockRoot(blockRoot);
-
-    const { [currentRowKey]: string, ...obj } = blockData;
+    const { [blockId]: string, ...obj } = blockData;
     setBlockData(obj);
   };
 
@@ -306,10 +315,10 @@ export default function Editor() {
 
   let rowCount = -1;
   const renderRowList = (
-    blockRoot: string[] | undefined,
+    blockTopRoot: string[] | undefined,
     depth: number = 0
   ): any => {
-    return blockRoot?.map((blockId) => {
+    return blockTopRoot?.map((blockId) => {
       const data = blockData[blockId];
       rowCount++;
       return (
@@ -335,5 +344,5 @@ export default function Editor() {
     });
   };
 
-  return <>{renderRowList(blockRoot)}</>;
+  return <>{renderRowList(blockTopRoot)}</>;
 }
