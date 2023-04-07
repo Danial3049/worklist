@@ -1,6 +1,6 @@
 import _ from "lodash";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { dummyBlockData, dummyBlockTopRoot } from "../dymmy";
+import { dummyBlockData } from "../dymmy";
 import BlockComponent from "./BlockComponent";
 import {
   BlockType,
@@ -9,8 +9,6 @@ import {
   addBlockTopLeaf,
   getBlock,
   getBlockType,
-  getBranchBlocks,
-  getRootBlock,
   getTopRootBlockId,
   indentBlockNotTop,
   indentBlockTop,

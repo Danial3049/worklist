@@ -179,13 +179,16 @@ export const getBlockType = (block: Block): BlockType => {
 };
 
 export const getTopRootBlockId = (blockData: Block[]): string[] => {
-  const topRootBlockIds = blockData.map((block) => {
-    if (block.root == null) {
-      return block.id;
+  const rootBlock = blockData.map((block) => {
+    if (block.id === "root") {
+      return block;
     }
   });
 
-  return _.compact(topRootBlockIds);
+  if (rootBlock[0]?.branch) {
+    return _.compact(rootBlock[0].branch);
+  }
+  return [];
 };
 
 export const getBlock = (
