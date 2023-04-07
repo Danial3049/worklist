@@ -5,7 +5,7 @@ import { Block } from ".";
 interface BlockComponentProps {
   refIndex: number;
   depth: number;
-  block: Block;
+  block?: Block;
   blockId: string;
   inputRef: (el: any, refIndex: number) => any;
   onChange: (changeContent: string | null) => void;

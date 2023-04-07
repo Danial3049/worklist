@@ -7,14 +7,20 @@ import {
   addBlockBranch,
   addBlockLeaf,
   addBlockTopLeaf,
+  getBlock,
   getBlockType,
+  getBranchBlocks,
+  getRootBlock,
+  getTopRootBlockId,
   indentBlockNotTop,
   indentBlockTop,
   removeBlockLeaf,
   removeBlockTopLeaf,
+  setBlock,
 } from "./BlockUtils";
 
 export interface Block {
+  id: string;
   content?: string;
   branch?: string[];
   root?: string;
@@ -33,8 +39,9 @@ export default function Editor() {
   const blockRef = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    setBlockTopRoot(dummyBlockTopRoot);
-    setBlockData(dummyBlockData);
+    const topRootBlockIds = getTopRootBlockId(dummyBlockData);
+    setBlockTopRoot(topRootBlockIds);
+    setBlockData(_.keyBy(dummyBlockData, "id"));
   }, []);
 
   // TODO: Debug 용도
@@ -50,16 +57,15 @@ export default function Editor() {
   }, [blockData]);
 
   const updateBlockContent = (blockId: string, newContent: string | null) => {
-    const updateBlockData = blockData[blockId];
+    const updateBlockData = getBlock(blockId, blockData);
 
     if (!updateBlockData) return;
 
     updateBlockData.content = newContent || "";
 
-    setBlockData((prev) => ({
-      ...prev,
-      [blockId]: updateBlockData,
-    }));
+    const newBlockData = setBlock(updateBlockData, blockData);
+
+    setBlockData({ ...newBlockData });
   };
 
   const handleKeyPress = (
@@ -77,6 +83,10 @@ export default function Editor() {
 
     if (blockElement.key === "Tab" && blockElement.shiftKey === true) {
       blockElement.preventDefault();
+      actionOutdent(blockId, blockRefIndex);
+      setTimeout(() => {
+        actionFocusMove(blockRefIndex, FocusOption.MAINTAIN);
+      }, 0);
     }
 
     if (blockElement.key === "Tab" && blockElement.shiftKey !== true) {
@@ -165,15 +175,67 @@ export default function Editor() {
   };
 
   const actionOutdent = (blockId: string, refIndex: number) => {
-    // 현재 아이템 lodash findkey 검토
-
     const block = blockData[blockId];
+    const blockType = getBlockType(block);
 
-    const blockRootId = block?.root;
+    switch (blockType) {
+      case BlockType.Leaf:
+        break;
+      case BlockType.Branch:
+        {
+          const blockRootId = block.root || "";
+          const block2StepRootId = blockData[blockRootId].root;
 
-    if (blockRootId) {
+          console.log("blockRootId", blockRootId);
+          console.log("block2StepRootId", block2StepRootId);
+          if (blockRootId && block2StepRootId) {
+            console.log(1);
+          } else {
+            console.log(2);
+            // 조건을 더 상세하게 나눠보자
+
+            if (blockTopRoot.includes(blockId)) return;
+
+            const newBlockData = blockData;
+
+            const newBlockRootBranch = newBlockData[blockRootId]
+              .branch as string[];
+
+            const blockOrderIndex = _.indexOf(newBlockRootBranch, blockId);
+            newBlockRootBranch.splice(blockOrderIndex, 1);
+
+            newBlockData[blockRootId].branch = undefined;
+            newBlockData[blockId].root = undefined;
+
+            newBlockData[blockId].branch =
+              newBlockData[blockId].branch?.concat(newBlockRootBranch);
+
+            setBlockData({ ...newBlockData });
+
+            const newBlock2StepRootBranch = blockTopRoot;
+
+            const block2StepRootOrderIndex = _.indexOf(
+              newBlock2StepRootBranch,
+              blockRootId
+            );
+
+            newBlock2StepRootBranch.splice(
+              block2StepRootOrderIndex + 1,
+              0,
+              blockId
+            );
+            setBlockTopRoot(newBlock2StepRootBranch);
+
+            console.log("newBlockData", newBlockData);
+          }
+        }
+        break;
+      case BlockType.TopBranch:
+      case BlockType.TopLeaf:
+        break;
+      default:
+        break;
     }
-    //parent를 부모의 parent로 변경
   };
 
   const getBlockElRefIndex = (blockRefIndex: number): HTMLDivElement | null => {
@@ -181,7 +243,7 @@ export default function Editor() {
   };
 
   const actionAdd = (blockId: string, refIndex: number) => {
-    const block = blockData[blockId];
+    const block = getBlock(blockId, blockData);
     const blockType = getBlockType(block);
 
     switch (blockType) {
@@ -271,7 +333,7 @@ export default function Editor() {
     depth: number = 0
   ): any => {
     return blockTopRoot?.map((blockId) => {
-      const data = blockData[blockId];
+      const data = getBlock(blockId, blockData);
       rowCount++;
       return (
         <Fragment key={blockId}>
