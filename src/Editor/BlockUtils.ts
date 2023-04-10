@@ -1,5 +1,5 @@
-import { Block } from ".";
 import _ from "lodash";
+import { Block } from ".";
 
 export enum BlockType {
   None,
@@ -13,15 +13,33 @@ export const addBlockBranch = (
   blockId: string,
   blockData: { [id: string]: Block }
 ): { [id: string]: Block } => {
-  const generatedId = getGeneratedId();
-  const block = blockData[blockId];
-  const blockBranchOrder = block?.branch as string[];
+  const blockBranch = getBranch(blockId, blockData);
 
-  blockBranchOrder.unshift(generatedId);
+  if (!blockBranch) return blockData;
+
+  const newBlock = createBlock();
+  newBlock.root = blockId;
+
+  const newBlockBranch = insertBlockAtBranch(
+    blockId,
+    newBlock.id,
+    "first",
+    blockBranch
+  );
 
   const newBlockData = blockData;
-  newBlockData[blockId].branch = blockBranchOrder;
-  newBlockData[generatedId] = { id: generatedId, content: "", root: blockId };
+  newBlockData[newBlock.id] = newBlock;
+  newBlockData[blockId].branch = newBlockBranch;
+
+  // const generatedId = getGeneratedId();
+  // const block = blockData[blockId];
+  // const blockBranchOrder = block?.branch as string[];
+
+  // blockBranchOrder.unshift(generatedId);
+
+  // const newBlockData = blockData;
+  // newBlockData[blockId].branch = blockBranchOrder;
+  // newBlockData[generatedId] = { id: generatedId, content: "", root: blockId };
 
   return newBlockData;
 };
@@ -30,55 +48,63 @@ export const addBlockLeaf = (
   blockId: string,
   blockData: { [id: string]: Block }
 ): { [id: string]: Block } => {
-  const generatedId = getGeneratedId();
-  const block = blockData[blockId];
-  const blockRootId = block.root as string;
-  const blockRootBranchOrder = blockData[blockRootId].branch as string[];
-  const blockOrderIndex = _.indexOf(blockRootBranchOrder, blockId);
+  const block = getBlock(blockId, blockData);
 
-  blockRootBranchOrder.splice(blockOrderIndex + 1, 0, String(generatedId));
+  const rootBlock = getRootBlock(blockId, blockData);
+
+  if (!rootBlock?.branch) return blockData;
+
+  const newBlock = createBlock();
+  newBlock.root = block.root;
+
+  const newBlockRoot = insertBlockAtBranch(
+    blockId,
+    newBlock.id,
+    "next",
+    rootBlock?.branch
+  );
 
   const newBlockData = blockData;
-  newBlockData[blockRootId].branch = blockRootBranchOrder;
-  newBlockData[generatedId] = {
-    id: generatedId,
-    content: "",
-    root: block.root,
-  };
+  newBlockData[newBlock.id] = newBlock;
+  newBlockData[rootBlock.id].branch = newBlockRoot;
 
   return newBlockData;
 };
 
 export const addBlockTopLeaf = (
   blockId: string,
-  blockData: { [id: string]: Block },
-  blockTopRoot: string[]
-): { newBlockData: { [id: string]: Block }; newBlockTopRoot: string[] } => {
-  const generatedId = getGeneratedId();
+  blockData: { [id: string]: Block }
+): { [id: string]: Block } => {
+  const blockTopRoot = blockData["root"].branch;
 
-  const blockOrderIndex = _.indexOf(blockTopRoot, blockId);
+  if (!blockTopRoot) return blockData;
 
-  blockTopRoot.splice(blockOrderIndex + 1, 0, String(generatedId));
+  const newBlock = createBlock();
+  const newBlockTopRoot = insertBlockAtBranch(
+    blockId,
+    newBlock.id,
+    "next",
+    blockTopRoot
+  );
 
   const newBlockData = blockData;
-  newBlockData[generatedId] = { id: generatedId, content: "" };
+  newBlockData[newBlock.id] = newBlock;
+  newBlockData["root"].branch = newBlockTopRoot;
 
-  return { newBlockData: newBlockData, newBlockTopRoot: blockTopRoot };
+  return newBlockData;
 };
 
 export const removeBlockTopLeaf = (
   blockId: string,
   blockData: { [id: string]: Block },
   blockTopRoot: string[]
-): { newBlockData: { [id: string]: Block }; newBlockTopRoot: string[] } => {
-  const blockOrderIndex = _.indexOf(blockTopRoot, blockId);
+): { [id: string]: Block } => {
+  const newBlockBranch = removeBlockAtBranch(blockId, blockTopRoot);
+  const newBlockData = removeBlock(blockId, blockData);
 
-  // TODO: 좀 더 개선할 방안이 없나?
-  blockTopRoot.splice(blockOrderIndex, 1);
+  newBlockData["root"].branch = newBlockBranch;
 
-  const newBlockData = _.omit(blockData, blockId);
-
-  return { newBlockData: newBlockData, newBlockTopRoot: blockTopRoot };
+  return newBlockData;
 };
 
 export const removeBlockLeaf = (
@@ -156,7 +182,11 @@ export const indentBlockNotTop = (
   return newBlockData;
 };
 
-export const getBlockType = (block: Block): BlockType => {
+export const getBlockType = (
+  blockId: string,
+  blockData: { [id: string]: Block }
+): BlockType => {
+  const block = getBlock(blockId, blockData);
   const branch = block?.branch;
   const root = block?.root;
 
@@ -178,17 +208,18 @@ export const getBlockType = (block: Block): BlockType => {
   return BlockType.None;
 };
 
-export const getTopRootBlockId = (blockData: Block[]): string[] => {
-  const rootBlock = blockData.map((block) => {
-    if (block.id === "root") {
-      return block;
-    }
+export const hasBranch = (block: Block): boolean => {
+  const branch = block?.branch;
+
+  return branch ? true : false;
+};
+
+export const getTopRootBlockId = (blockData: Block[]): string[] | undefined => {
+  const rootBlock = _.find(blockData, (block) => {
+    return block.id === "root";
   });
 
-  if (rootBlock[0]?.branch) {
-    return _.compact(rootBlock[0].branch);
-  }
-  return [];
+  return rootBlock?.branch;
 };
 
 export const getBlock = (
@@ -200,7 +231,8 @@ export const getBlock = (
 
 export const getRootBlock = (
   blockId: string,
-  blockData: { [id: string]: Block }
+  blockData: { [id: string]: Block },
+  step: number = 1
 ) => {
   const block = getBlock(blockId, blockData);
 
@@ -224,10 +256,73 @@ export const getBranchBlocks = (
   return branchBlocks;
 };
 
-export const getBlockOrder = (
-  block: Block,
+export const getBranch = (
+  blockId: string,
   blockData: { [id: string]: Block }
-) => {};
+) => {
+  const block = getBlock(blockId, blockData);
+
+  if (!block?.branch) return;
+
+  return block?.branch;
+};
+
+export const getRootBlockBranch = (
+  blockId: string,
+  blockData: { [id: string]: Block }
+) => {
+  const rootBlock = getRootBlock(blockId, blockData);
+
+  return rootBlock?.branch || 0;
+};
+
+export const insertBlockAtBranch = (
+  baseBlockId: string,
+  insertBlockId: string,
+  position: "first" | "last" | "next" | "prev",
+  blockOrder: string[]
+) => {
+  const baseBlockIndex = blockOrder.indexOf(baseBlockId);
+
+  if (position === "first") {
+    blockOrder.unshift(insertBlockId);
+  }
+
+  if (position === "last") {
+    blockOrder.push(insertBlockId);
+  }
+
+  if (position === "next") {
+    blockOrder.splice(baseBlockIndex + 1, 0, insertBlockId);
+  }
+
+  if (position === "prev") {
+    blockOrder.splice(baseBlockIndex, 0, insertBlockId);
+  }
+
+  return blockOrder;
+};
+
+export const removeBlock = (
+  blockId: string,
+  blockData: { [id: string]: Block }
+): { [id: string]: Block } => {
+  return _.omit(blockData, blockId);
+};
+
+export const removeBlockAtBranch = (blockId: string, blockOrder: string[]) => {
+  const blockIndex = blockOrder.indexOf(blockId);
+
+  blockOrder.splice(blockIndex, 1);
+
+  return blockOrder;
+};
+
+export const createBlock = (): Block => {
+  const id = getGeneratedId();
+
+  return { id: id, content: "", root: undefined, branch: undefined };
+};
 
 export const setBlock = (block: Block, blockData: { [id: string]: Block }) => {
   blockData[block.id] = block;
@@ -235,6 +330,6 @@ export const setBlock = (block: Block, blockData: { [id: string]: Block }) => {
   return blockData;
 };
 
-const getGeneratedId = (): string => {
+export const getGeneratedId = (): string => {
   return ((new Date().getTime() + Math.random()) * 10000).toString();
 };

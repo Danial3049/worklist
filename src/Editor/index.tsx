@@ -7,11 +7,15 @@ import {
   addBlockBranch,
   addBlockLeaf,
   addBlockTopLeaf,
+  createBlock,
   getBlock,
   getBlockType,
+  getBranch,
+  getRootBlock,
   getTopRootBlockId,
   indentBlockNotTop,
   indentBlockTop,
+  insertBlockAtBranch,
   removeBlockLeaf,
   removeBlockTopLeaf,
   setBlock,
@@ -37,7 +41,8 @@ export default function Editor() {
   const blockRef = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    const topRootBlockIds = getTopRootBlockId(dummyBlockData);
+    const topRootBlockIds = getTopRootBlockId(dummyBlockData) || [];
+
     setBlockTopRoot(topRootBlockIds);
     setBlockData(_.keyBy(dummyBlockData, "id"));
   }, []);
@@ -51,6 +56,11 @@ export default function Editor() {
   // TODO: Debug 용도
   useEffect(() => {
     if (Object.keys(blockData).length <= 0) return;
+
+    if (blockData && blockData["root"] && blockData["root"].branch) {
+      const rootBranch = blockData["root"].branch;
+      setBlockTopRoot(rootBranch);
+    }
     console.log("blockData", blockData);
   }, [blockData]);
 
@@ -108,7 +118,7 @@ export default function Editor() {
       if (blockContent != null && blockContent?.length <= 0) {
         blockElement.preventDefault();
 
-        const blockType = getBlockType(blockData[blockId]);
+        const blockType = getBlockType(blockId, blockData);
 
         // topLeaf 인데 root가 하나 일 때는 삭제 하지 않음.
         if (blockType === BlockType.TopLeaf && blockTopRoot.length <= 1) return;
@@ -132,8 +142,7 @@ export default function Editor() {
   };
 
   const actionIndent = (blockId: string, refIndex: number) => {
-    const block = blockData[blockId];
-    const blockType = getBlockType(block);
+    const blockType = getBlockType(blockId, blockData);
 
     switch (blockType) {
       case BlockType.TopBranch:
@@ -174,7 +183,7 @@ export default function Editor() {
 
   const actionOutdent = (blockId: string, refIndex: number) => {
     const block = blockData[blockId];
-    const blockType = getBlockType(block);
+    const blockType = getBlockType(blockId, blockData);
 
     switch (blockType) {
       case BlockType.Leaf:
@@ -241,19 +250,12 @@ export default function Editor() {
   };
 
   const actionAdd = (blockId: string, refIndex: number) => {
-    const block = getBlock(blockId, blockData);
-    const blockType = getBlockType(block);
+    const blockType = getBlockType(blockId, blockData);
 
     switch (blockType) {
       case BlockType.TopLeaf:
         {
-          const { newBlockData, newBlockTopRoot } = addBlockTopLeaf(
-            blockId,
-            blockData,
-            blockTopRoot
-          );
-
-          setBlockTopRoot(newBlockTopRoot);
+          const newBlockData = addBlockTopLeaf(blockId, blockData);
           setBlockData({ ...newBlockData });
         }
         break;
@@ -282,19 +284,17 @@ export default function Editor() {
   const actionRemove = (blockId: string) => {
     console.log("actionRemove");
 
-    const block = blockData[blockId];
-    const blockType = getBlockType(block);
+    const blockType = getBlockType(blockId, blockData);
 
     switch (blockType) {
       case BlockType.TopLeaf:
         {
-          const { newBlockData, newBlockTopRoot } = removeBlockTopLeaf(
+          const newBlockData = removeBlockTopLeaf(
             blockId,
             blockData,
             blockTopRoot
           );
 
-          setBlockTopRoot(newBlockTopRoot);
           setBlockData({ ...newBlockData });
         }
         break;
