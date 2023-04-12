@@ -205,7 +205,7 @@ export default function Editor() {
     if (block.branch) {
       newBlockBranch.unshift(...block.branch);
     }
-    newBlockBranch.map((nblockId) => {
+    newBlockBranch.forEach((nblockId) => {
       newBlockData[nblockId].root = blockId;
     });
 
