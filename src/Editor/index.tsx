@@ -35,10 +35,17 @@ export default function Editor() {
   const blockRef = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    const topRootBlockIds = getTopRootBlockId(dummyBlockData) || [];
+    const workListData = window.localStorage.getItem("worklist");
 
+    let defaultBlockData = dummyBlockData;
+    if (workListData) {
+      defaultBlockData = JSON.parse(workListData);
+    }
+    console.log("defaultBlockData", defaultBlockData);
+
+    const topRootBlockIds = getTopRootBlockId(defaultBlockData) || [];
     setBlockTopRoot(topRootBlockIds);
-    setBlockData(_.keyBy(dummyBlockData, "id"));
+    setBlockData(_.keyBy(defaultBlockData, "id"));
   }, []);
 
   // TODO: Debug 용도
@@ -55,7 +62,10 @@ export default function Editor() {
       const rootBranch = blockData["root"].branch;
       setBlockTopRoot(rootBranch);
     }
-    console.log("blockData", blockData);
+
+    const saveBlockData = JSON.stringify(blockData);
+    console.log("saveBlockData", saveBlockData);
+    window.localStorage.setItem("worklist", saveBlockData);
   }, [blockData]);
 
   const updateBlockContent = (blockId: string, newContent: string | null) => {
@@ -79,6 +89,8 @@ export default function Editor() {
     //TODO: Debug 용도
     console.log("Press key = ", blockElement.key);
 
+    console.log("window.getSelection()", window.getSelection());
+    // console.log("blockElement.target", blockElement.caretPosition);
     if (blockElement.key === "ArrowDown") {
       blockElement.preventDefault();
       actionFocusMove(blockRefIndex, FocusOption.DOWN);
@@ -105,6 +117,14 @@ export default function Editor() {
     if (blockElement.key === "Tab" && blockElement.shiftKey !== true) {
       blockElement.preventDefault();
       actionIndent(blockId, blockRefIndex);
+    }
+
+    if (blockElement.key === "s" && blockElement.ctrlKey === true) {
+      blockElement.preventDefault();
+      console.log("save");
+      const saveBlockData = JSON.stringify(blockData);
+      console.log("saveBlockData", saveBlockData);
+      window.localStorage.setItem("worklist", saveBlockData);
     }
 
     if (blockElement.key === "Backspace") {
@@ -219,12 +239,25 @@ export default function Editor() {
   };
 
   const actionAdd = (blockId: string, refIndex: number) => {
+    const selection = window.getSelection();
+    const blockContent = getBlockElRefIndex(refIndex)?.textContent;
+
+    let addPrev = false;
+    // 커서가 현재 컨텐츠의 가장 앞에 있으면 이전에 추가 한다.
+    if (selection && selection.anchorOffset <= 0 && blockContent) {
+      addPrev = true;
+    }
+
     const blockType = getBlockType(blockId, blockData);
     const newBlock = createBlock();
     const newBlockData = blockData;
     let newBranch;
 
-    if (blockType === BlockType.Leaf || blockType === BlockType.TopLeaf) {
+    if (
+      blockType === BlockType.Leaf ||
+      blockType === BlockType.TopLeaf ||
+      addPrev
+    ) {
       const rootBlock = getRootBlock(blockId, blockData);
       const rootBlockBranch = rootBlock?.branch;
 
@@ -233,7 +266,7 @@ export default function Editor() {
       newBranch = insertBlockAtBranch(
         newBlock.id,
         rootBlockBranch,
-        "next",
+        addPrev ? "prev" : "next",
         blockId
       );
 
@@ -255,8 +288,11 @@ export default function Editor() {
     setBlockData({ ...newBlockData });
 
     setTimeout(() => {
-      actionFocusMove(refIndex, FocusOption.DOWN);
-    }, 0);
+      actionFocusMove(
+        refIndex,
+        addPrev ? FocusOption.MAINTAIN : FocusOption.DOWN
+      );
+    }, 10);
   };
 
   const actionRemove = (blockId: string) => {
