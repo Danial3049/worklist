@@ -4,14 +4,16 @@ const dummyBlockData: Block[] = [
   { id: "root", branch: ["1", "2", "3"] },
   {
     id: "1",
+    root: "root",
     content: "1",
     branch: ["1-1"],
   },
   {
     id: "2",
+    root: "root",
     content: "2",
   },
-  { id: "3", content: "3", branch: ["3-1"] },
+  { id: "3", root: "root", content: "3", branch: ["3-1"] },
   {
     id: "1-1",
     root: "1",

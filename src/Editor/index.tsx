@@ -4,21 +4,15 @@ import { dummyBlockData } from "../dymmy";
 import BlockComponent from "./BlockComponent";
 import {
   BlockType,
-  addBlockBranch,
-  addBlockLeaf,
-  addBlockTopLeaf,
   createBlock,
   getBlock,
   getBlockType,
-  getBranch,
+  getPrevBlock,
   getRootBlock,
   getTopRootBlockId,
-  indentBlockNotTop,
-  indentBlockTop,
   insertBlockAtBranch,
-  removeBlockLeaf,
-  removeBlockTopLeaf,
-  setBlock,
+  removeBlock,
+  removeBlockAtBranch,
 } from "./BlockUtils";
 
 export interface Block {
@@ -71,7 +65,8 @@ export default function Editor() {
 
     updateBlockData.content = newContent || "";
 
-    const newBlockData = setBlock(updateBlockData, blockData);
+    const newBlockData = blockData;
+    newBlockData[updateBlockData.id] = updateBlockData;
 
     setBlockData({ ...newBlockData });
   };
@@ -83,6 +78,16 @@ export default function Editor() {
   ) => {
     //TODO: Debug 용도
     console.log("Press key = ", blockElement.key);
+
+    if (blockElement.key === "ArrowDown") {
+      blockElement.preventDefault();
+      actionFocusMove(blockRefIndex, FocusOption.DOWN);
+    }
+
+    if (blockElement.key === "ArrowUp") {
+      blockElement.preventDefault();
+      actionFocusMove(blockRefIndex, FocusOption.UP);
+    }
 
     if (blockElement.key === "Enter" && blockElement.shiftKey !== true) {
       blockElement.preventDefault();
@@ -100,16 +105,6 @@ export default function Editor() {
     if (blockElement.key === "Tab" && blockElement.shiftKey !== true) {
       blockElement.preventDefault();
       actionIndent(blockId, blockRefIndex);
-    }
-
-    if (blockElement.key === "ArrowDown") {
-      blockElement.preventDefault();
-      actionFocusMove(blockRefIndex, FocusOption.DOWN);
-    }
-
-    if (blockElement.key === "ArrowUp") {
-      blockElement.preventDefault();
-      actionFocusMove(blockRefIndex, FocusOption.UP);
     }
 
     if (blockElement.key === "Backspace") {
@@ -142,39 +137,32 @@ export default function Editor() {
   };
 
   const actionIndent = (blockId: string, refIndex: number) => {
-    const blockType = getBlockType(blockId, blockData);
+    const rootBlock = getRootBlock(blockId, blockData);
+    const rootBlockBranch = rootBlock?.branch;
+    const prevBlock = getPrevBlock(blockId, blockData);
+    const prevBlockBranch = prevBlock?.branch;
 
-    switch (blockType) {
-      case BlockType.TopBranch:
-      case BlockType.TopLeaf:
-        {
-          const indetBlockTopResult = indentBlockTop(
-            blockId,
-            blockData,
-            blockTopRoot
-          );
+    const block = getBlock(blockId, blockData);
 
-          if (!indetBlockTopResult) return;
+    if (!prevBlock) return;
 
-          const { newBlockData, newBlockTopRoot } = indetBlockTopResult;
+    const newPrevBlockBranch = insertBlockAtBranch(
+      blockId,
+      prevBlockBranch,
+      "last"
+    );
 
-          setBlockTopRoot(newBlockTopRoot);
-          setBlockData({ ...newBlockData });
-        }
-        break;
-      case BlockType.Branch:
-      case BlockType.Leaf:
-        {
-          const newBlockData = indentBlockNotTop(blockId, blockData);
+    if (!rootBlockBranch) return;
 
-          if (!newBlockData) return;
+    const newRootBlockBranch = removeBlockAtBranch(blockId, rootBlockBranch);
 
-          setBlockData({ ...newBlockData });
-        }
-        break;
-      default:
-        break;
-    }
+    const newBlockData = blockData;
+
+    newBlockData[prevBlock.id].branch = newPrevBlockBranch;
+    newBlockData[rootBlock.id].branch = newRootBlockBranch;
+    newBlockData[block.id].root = prevBlock.id;
+
+    setBlockData({ ...newBlockData });
 
     setTimeout(() => {
       actionFocusMove(refIndex, FocusOption.MAINTAIN);
@@ -182,67 +170,48 @@ export default function Editor() {
   };
 
   const actionOutdent = (blockId: string, refIndex: number) => {
-    const block = blockData[blockId];
-    const blockType = getBlockType(blockId, blockData);
+    const rootBlock = getRootBlock(blockId, blockData);
+    const block = getBlock(blockId, blockData);
 
-    switch (blockType) {
-      case BlockType.Leaf:
-        break;
-      case BlockType.Branch:
-        {
-          const blockRootId = block.root || "";
-          const block2StepRootId = blockData[blockRootId].root;
+    if (!rootBlock) return;
 
-          console.log("blockRootId", blockRootId);
-          console.log("block2StepRootId", block2StepRootId);
-          if (blockRootId && block2StepRootId) {
-            console.log(1);
-          } else {
-            console.log(2);
-            // 조건을 더 상세하게 나눠보자
+    const twoStepRootBlock = getRootBlock(rootBlock?.id, blockData);
+    if (!twoStepRootBlock) return;
 
-            if (blockTopRoot.includes(blockId)) return;
+    const twoStepRootBlockBranch = twoStepRootBlock?.branch;
+    const newTwoStepRootBlockBranch = insertBlockAtBranch(
+      blockId,
+      twoStepRootBlockBranch,
+      "next",
+      rootBlock.id
+    );
 
-            const newBlockData = blockData;
+    const rootBlockBranch = rootBlock.branch;
+    if (!rootBlockBranch) return;
 
-            const newBlockRootBranch = newBlockData[blockRootId]
-              .branch as string[];
+    const blockIndex = rootBlockBranch.indexOf(blockId);
+    let newBlockBranch = rootBlockBranch.splice(
+      blockIndex + 1,
+      rootBlockBranch.length - (blockIndex + 1)
+    );
 
-            const blockOrderIndex = _.indexOf(newBlockRootBranch, blockId);
-            newBlockRootBranch.splice(blockOrderIndex, 1);
+    const newRootBlockBranch = removeBlockAtBranch(blockId, rootBlockBranch);
 
-            newBlockData[blockRootId].branch = undefined;
-            newBlockData[blockId].root = undefined;
+    const newBlockData = blockData;
+    newBlockData[twoStepRootBlock.id].branch = newTwoStepRootBlockBranch;
+    newBlockData[rootBlock.id].branch = newRootBlockBranch;
+    newBlockData[blockId].root = twoStepRootBlock?.id;
 
-            newBlockData[blockId].branch =
-              newBlockData[blockId].branch?.concat(newBlockRootBranch);
-
-            setBlockData({ ...newBlockData });
-
-            const newBlock2StepRootBranch = blockTopRoot;
-
-            const block2StepRootOrderIndex = _.indexOf(
-              newBlock2StepRootBranch,
-              blockRootId
-            );
-
-            newBlock2StepRootBranch.splice(
-              block2StepRootOrderIndex + 1,
-              0,
-              blockId
-            );
-            setBlockTopRoot(newBlock2StepRootBranch);
-
-            console.log("newBlockData", newBlockData);
-          }
-        }
-        break;
-      case BlockType.TopBranch:
-      case BlockType.TopLeaf:
-        break;
-      default:
-        break;
+    if (block.branch) {
+      newBlockBranch.unshift(...block.branch);
     }
+    newBlockBranch.map((nblockId) => {
+      newBlockData[nblockId].root = blockId;
+    });
+
+    newBlockData[blockId].branch = newBlockBranch;
+
+    setBlockData({ ...newBlockData });
   };
 
   const getBlockElRefIndex = (blockRefIndex: number): HTMLDivElement | null => {
@@ -251,30 +220,39 @@ export default function Editor() {
 
   const actionAdd = (blockId: string, refIndex: number) => {
     const blockType = getBlockType(blockId, blockData);
+    const newBlock = createBlock();
+    const newBlockData = blockData;
+    let newBranch;
 
-    switch (blockType) {
-      case BlockType.TopLeaf:
-        {
-          const newBlockData = addBlockTopLeaf(blockId, blockData);
-          setBlockData({ ...newBlockData });
-        }
-        break;
-      case BlockType.Leaf:
-        {
-          const newBlockData = addBlockLeaf(blockId, blockData);
-          setBlockData({ ...newBlockData });
-        }
-        break;
-      case BlockType.TopBranch:
-      case BlockType.Branch:
-        {
-          const newBlockData = addBlockBranch(blockId, blockData);
-          setBlockData({ ...newBlockData });
-        }
-        break;
-      default:
-        break;
+    if (blockType === BlockType.Leaf || blockType === BlockType.TopLeaf) {
+      const rootBlock = getRootBlock(blockId, blockData);
+      const rootBlockBranch = rootBlock?.branch;
+
+      if (!rootBlockBranch) return;
+
+      newBranch = insertBlockAtBranch(
+        newBlock.id,
+        rootBlockBranch,
+        "next",
+        blockId
+      );
+
+      newBlock.root = rootBlock.id;
+    } else {
+      const block = getBlock(blockId, blockData);
+      const blockBranch = block.branch;
+
+      if (!blockBranch) return;
+
+      newBranch = insertBlockAtBranch(newBlock.id, blockBranch, "first");
+
+      newBlock.root = blockId;
     }
+
+    newBlockData[newBlock.root].branch = newBranch;
+    newBlockData[newBlock.id] = newBlock;
+
+    setBlockData({ ...newBlockData });
 
     setTimeout(() => {
       actionFocusMove(refIndex, FocusOption.DOWN);
@@ -286,31 +264,27 @@ export default function Editor() {
 
     const blockType = getBlockType(blockId, blockData);
 
-    switch (blockType) {
-      case BlockType.TopLeaf:
-        {
-          const newBlockData = removeBlockTopLeaf(
-            blockId,
-            blockData,
-            blockTopRoot
-          );
+    if (blockType !== BlockType.TopLeaf && blockType !== BlockType.Leaf) return;
 
-          setBlockData({ ...newBlockData });
-        }
-        break;
-      case BlockType.Leaf:
-        {
-          const newBlockData = removeBlockLeaf(blockId, blockData);
+    const rootBlock = getRootBlock(blockId, blockData);
+    const rootBlockBranch = rootBlock?.branch;
 
-          setBlockData({ ...newBlockData });
-        }
+    if (!rootBlockBranch) return;
 
-        break;
-      case BlockType.TopBranch:
-      case BlockType.Branch:
-      default:
-        break;
+    let newBlockBranch: string[] | undefined = removeBlockAtBranch(
+      blockId,
+      rootBlockBranch
+    );
+
+    if (newBlockBranch.length <= 0) {
+      newBlockBranch = undefined;
     }
+
+    const newBlockData = removeBlock(blockId, blockData);
+
+    newBlockData[rootBlock?.id].branch = newBlockBranch;
+
+    setBlockData({ ...newBlockData });
   };
 
   const actionFocusMove = (blockRefIndex: number, focusOption: FocusOption) => {
