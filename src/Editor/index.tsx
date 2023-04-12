@@ -1,9 +1,22 @@
+import _ from "lodash";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { dummyBlockData, dummyBlockTopRoot } from "../dymmy";
+import { dummyBlockData } from "../dymmy";
 import BlockComponent from "./BlockComponent";
-import Utils from "./Utils";
+import {
+  BlockType,
+  createBlock,
+  getBlock,
+  getBlockType,
+  getPrevBlock,
+  getRootBlock,
+  getTopRootBlockId,
+  insertBlockAtBranch,
+  removeBlock,
+  removeBlockAtBranch,
+} from "./BlockUtils";
 
 export interface Block {
+  id: string;
   content?: string;
   branch?: string[];
   root?: string;
@@ -22,8 +35,10 @@ export default function Editor() {
   const blockRef = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    setBlockTopRoot(dummyBlockTopRoot);
-    setBlockData(dummyBlockData);
+    const topRootBlockIds = getTopRootBlockId(dummyBlockData) || [];
+
+    setBlockTopRoot(topRootBlockIds);
+    setBlockData(_.keyBy(dummyBlockData, "id"));
   }, []);
 
   // TODO: Debug 용도
@@ -35,20 +50,25 @@ export default function Editor() {
   // TODO: Debug 용도
   useEffect(() => {
     if (Object.keys(blockData).length <= 0) return;
+
+    if (blockData && blockData["root"] && blockData["root"].branch) {
+      const rootBranch = blockData["root"].branch;
+      setBlockTopRoot(rootBranch);
+    }
     console.log("blockData", blockData);
   }, [blockData]);
 
   const updateBlockContent = (blockId: string, newContent: string | null) => {
-    const updateBlockData = blockData[blockId];
+    const updateBlockData = getBlock(blockId, blockData);
 
     if (!updateBlockData) return;
 
     updateBlockData.content = newContent || "";
 
-    setBlockData((prev) => ({
-      ...prev,
-      [blockId]: updateBlockData,
-    }));
+    const newBlockData = blockData;
+    newBlockData[updateBlockData.id] = updateBlockData;
+
+    setBlockData({ ...newBlockData });
   };
 
   const handleKeyPress = (
@@ -59,32 +79,32 @@ export default function Editor() {
     //TODO: Debug 용도
     console.log("Press key = ", blockElement.key);
 
-    if (blockElement.key === "Enter" && blockElement.shiftKey !== true) {
-      blockElement.preventDefault();
-
-      actionAdd(blockId, blockRefIndex);
-    }
-
-    if (blockElement.key === "Tab" && blockElement.shiftKey === true) {
-      blockElement.preventDefault();
-    }
-
-    if (blockElement.key === "Tab" && blockElement.shiftKey !== true) {
-      blockElement.preventDefault();
-
-      actionIndent(blockId, blockRefIndex);
-    }
-
     if (blockElement.key === "ArrowDown") {
       blockElement.preventDefault();
-
       actionFocusMove(blockRefIndex, FocusOption.DOWN);
     }
 
     if (blockElement.key === "ArrowUp") {
       blockElement.preventDefault();
-
       actionFocusMove(blockRefIndex, FocusOption.UP);
+    }
+
+    if (blockElement.key === "Enter" && blockElement.shiftKey !== true) {
+      blockElement.preventDefault();
+      actionAdd(blockId, blockRefIndex);
+    }
+
+    if (blockElement.key === "Tab" && blockElement.shiftKey === true) {
+      blockElement.preventDefault();
+      actionOutdent(blockId, blockRefIndex);
+      setTimeout(() => {
+        actionFocusMove(blockRefIndex, FocusOption.MAINTAIN);
+      }, 0);
+    }
+
+    if (blockElement.key === "Tab" && blockElement.shiftKey !== true) {
+      blockElement.preventDefault();
+      actionIndent(blockId, blockRefIndex);
     }
 
     if (blockElement.key === "Backspace") {
@@ -93,70 +113,56 @@ export default function Editor() {
       if (blockContent != null && blockContent?.length <= 0) {
         blockElement.preventDefault();
 
-        actionFocusMove(blockRefIndex, FocusOption.UP);
-        actionRemove(blockId);
+        const blockType = getBlockType(blockId, blockData);
+
+        // topLeaf 인데 root가 하나 일 때는 삭제 하지 않음.
+        if (blockType === BlockType.TopLeaf && blockTopRoot.length <= 1) return;
+
+        if (
+          blockType !== BlockType.Branch &&
+          blockType !== BlockType.TopBranch
+        ) {
+          const blockIndex = _.indexOf(blockTopRoot, blockId);
+
+          if (blockIndex === 0) {
+            actionFocusMove(blockRefIndex, FocusOption.DOWN);
+          } else {
+            actionFocusMove(blockRefIndex, FocusOption.UP);
+          }
+
+          actionRemove(blockId);
+        }
       }
     }
   };
 
   const actionIndent = (blockId: string, refIndex: number) => {
-    const block = blockData[blockId];
-    const blockRootId = block?.root;
+    const rootBlock = getRootBlock(blockId, blockData);
+    const rootBlockBranch = rootBlock?.branch;
+    const prevBlock = getPrevBlock(blockId, blockData);
+    const prevBlockBranch = prevBlock?.branch;
 
-    if (!blockRootId) {
-      const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
+    const block = getBlock(blockId, blockData);
 
-      const beRootId = blockTopRoot[blockOrderIndex - 1];
+    if (!prevBlock) return;
 
-      // TODO: 추가 리펙토링 필요
-      if (beRootId) {
-        block.root = beRootId;
+    const newPrevBlockBranch = insertBlockAtBranch(
+      blockId,
+      prevBlockBranch,
+      "last"
+    );
 
-        const newParentOriginChildren = blockData[beRootId]?.branch;
+    if (!rootBlockBranch) return;
 
-        setBlockData((prev) => ({
-          ...prev,
-          [blockId]: block,
-          [beRootId]: {
-            ...prev?.[beRootId],
-            branch: [...(newParentOriginChildren || []), blockId],
-          },
-        }));
+    const newRootBlockBranch = removeBlockAtBranch(blockId, rootBlockBranch);
 
-        blockTopRoot.splice(blockOrderIndex, 1);
-        setBlockTopRoot(blockTopRoot);
-      }
-    }
+    const newBlockData = blockData;
 
-    if (blockRootId) {
-      const blockBranchOrder = blockData[blockRootId].branch;
+    newBlockData[prevBlock.id].branch = newPrevBlockBranch;
+    newBlockData[rootBlock.id].branch = newRootBlockBranch;
+    newBlockData[block.id].root = prevBlock.id;
 
-      if (!blockBranchOrder) return;
-
-      const blockOrderIndex = Utils.getIndexToArray(blockBranchOrder, blockId);
-
-      const beRootId = blockBranchOrder?.[blockOrderIndex - 1];
-      // TODO: 추가 리펙토링 필요
-      if (beRootId) {
-        const newParentOriginChildren = blockData[beRootId]?.branch;
-        blockBranchOrder.splice(blockOrderIndex, 1);
-        setBlockData((prev) => ({
-          ...prev,
-          [blockId]: { ...block, root: beRootId },
-          [blockRootId]: {
-            ...prev?.[blockRootId],
-            branch: blockBranchOrder,
-          },
-          [beRootId]: {
-            ...prev?.[beRootId],
-            branch: [...(newParentOriginChildren || []), blockId],
-          },
-        }));
-
-        blockTopRoot.splice(blockOrderIndex, 0);
-        setBlockTopRoot(blockTopRoot);
-      }
-    }
+    setBlockData({ ...newBlockData });
 
     setTimeout(() => {
       actionFocusMove(refIndex, FocusOption.MAINTAIN);
@@ -164,15 +170,48 @@ export default function Editor() {
   };
 
   const actionOutdent = (blockId: string, refIndex: number) => {
-    // 현재 아이템 lodash findkey 검토
+    const rootBlock = getRootBlock(blockId, blockData);
+    const block = getBlock(blockId, blockData);
 
-    const block = blockData[blockId];
+    if (!rootBlock) return;
 
-    const blockRootId = block?.root;
+    const twoStepRootBlock = getRootBlock(rootBlock?.id, blockData);
+    if (!twoStepRootBlock) return;
 
-    if (blockRootId) {
+    const twoStepRootBlockBranch = twoStepRootBlock?.branch;
+    const newTwoStepRootBlockBranch = insertBlockAtBranch(
+      blockId,
+      twoStepRootBlockBranch,
+      "next",
+      rootBlock.id
+    );
+
+    const rootBlockBranch = rootBlock.branch;
+    if (!rootBlockBranch) return;
+
+    const blockIndex = rootBlockBranch.indexOf(blockId);
+    let newBlockBranch = rootBlockBranch.splice(
+      blockIndex + 1,
+      rootBlockBranch.length - (blockIndex + 1)
+    );
+
+    const newRootBlockBranch = removeBlockAtBranch(blockId, rootBlockBranch);
+
+    const newBlockData = blockData;
+    newBlockData[twoStepRootBlock.id].branch = newTwoStepRootBlockBranch;
+    newBlockData[rootBlock.id].branch = newRootBlockBranch;
+    newBlockData[blockId].root = twoStepRootBlock?.id;
+
+    if (block.branch) {
+      newBlockBranch.unshift(...block.branch);
     }
-    //parent를 부모의 parent로 변경
+    newBlockBranch.map((nblockId) => {
+      newBlockData[nblockId].root = blockId;
+    });
+
+    newBlockData[blockId].branch = newBlockBranch;
+
+    setBlockData({ ...newBlockData });
   };
 
   const getBlockElRefIndex = (blockRefIndex: number): HTMLDivElement | null => {
@@ -180,70 +219,40 @@ export default function Editor() {
   };
 
   const actionAdd = (blockId: string, refIndex: number) => {
-    const generatedId = (new Date().getTime() + Math.random()) * 10000;
+    const blockType = getBlockType(blockId, blockData);
+    const newBlock = createBlock();
+    const newBlockData = blockData;
+    let newBranch;
 
-    const block = blockData[blockId];
-    const blockBranchOrder = block?.branch;
-    const blockRootId = block.root;
+    if (blockType === BlockType.Leaf || blockType === BlockType.TopLeaf) {
+      const rootBlock = getRootBlock(blockId, blockData);
+      const rootBlockBranch = rootBlock?.branch;
 
-    // TODO: 추가 리펙토링 필요
-    if (blockBranchOrder) {
-      setBlockData((prev) => {
-        return {
-          ...prev,
-          [generatedId]: { content: "", root: blockId },
-          [blockId]: {
-            ...block,
-            branch: [String(generatedId), ...blockBranchOrder],
-          },
-        };
-      });
-    }
+      if (!rootBlockBranch) return;
 
-    // TODO: 추가 리펙토링 필요
-    if (!blockBranchOrder && blockRootId) {
-      let blockRootBranchOrder = blockData[blockRootId].branch;
-
-      if (!blockRootBranchOrder) return;
-
-      const blockOrderIndex = Utils.getIndexToArray(
-        blockRootBranchOrder,
+      newBranch = insertBlockAtBranch(
+        newBlock.id,
+        rootBlockBranch,
+        "next",
         blockId
       );
 
-      if (blockRootBranchOrder) {
-        blockRootBranchOrder.splice(
-          blockOrderIndex + 1,
-          0,
-          String(generatedId)
-        );
-      }
+      newBlock.root = rootBlock.id;
+    } else {
+      const block = getBlock(blockId, blockData);
+      const blockBranch = block.branch;
 
-      setBlockData((prev) => {
-        return {
-          ...prev,
-          [generatedId]: { content: "", root: block.root },
-          [blockRootId]: {
-            ...block,
-            branch: blockRootBranchOrder,
-          },
-        };
-      });
+      if (!blockBranch) return;
+
+      newBranch = insertBlockAtBranch(newBlock.id, blockBranch, "first");
+
+      newBlock.root = blockId;
     }
 
-    // TODO: 추가 리펙토링 필요
-    if (!blockBranchOrder && !blockRootId) {
-      const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
+    newBlockData[newBlock.root].branch = newBranch;
+    newBlockData[newBlock.id] = newBlock;
 
-      blockTopRoot.splice(blockOrderIndex + 1, 0, String(generatedId));
-      setBlockTopRoot(blockTopRoot);
-      setBlockData((prev) => {
-        return {
-          ...prev,
-          [generatedId]: { content: "" },
-        };
-      });
-    }
+    setBlockData({ ...newBlockData });
 
     setTimeout(() => {
       actionFocusMove(refIndex, FocusOption.DOWN);
@@ -253,58 +262,36 @@ export default function Editor() {
   const actionRemove = (blockId: string) => {
     console.log("actionRemove");
 
-    const block = blockData[blockId];
-    const blockRootId = block?.root;
-    // TODO: 추가 리펙토링 필요
-    if (blockRootId) {
-      const blockRoot = blockData[blockRootId];
-      let blockRootBranchOrder = blockRoot?.branch;
+    const blockType = getBlockType(blockId, blockData);
 
-      if (!blockRootBranchOrder) return;
+    if (blockType !== BlockType.TopLeaf && blockType !== BlockType.Leaf) return;
 
-      const blockOrderIndex = Utils.getIndexToArray(
-        blockRootBranchOrder,
-        blockId
-      );
+    const rootBlock = getRootBlock(blockId, blockData);
+    const rootBlockBranch = rootBlock?.branch;
 
-      blockRootBranchOrder?.splice(blockOrderIndex, 1);
+    if (!rootBlockBranch) return;
 
-      if (Number(blockRootBranchOrder?.length) <= 0) {
-        blockRootBranchOrder = undefined;
-      }
+    let newBlockBranch: string[] | undefined = removeBlockAtBranch(
+      blockId,
+      rootBlockBranch
+    );
 
-      setBlockData((prev) => {
-        const { [blockId]: string, ...obj } = prev;
-        return {
-          ...obj,
-          [blockRootId]: {
-            ...prev?.[blockRootId],
-            branch: blockRootBranchOrder,
-          },
-        };
-      });
-
-      return;
+    if (newBlockBranch.length <= 0) {
+      newBlockBranch = undefined;
     }
-    // TODO: 추가 리펙토링 필요
-    const blockOrderIndex = Utils.getIndexToArray(blockTopRoot, blockId);
 
-    blockTopRoot.splice(blockOrderIndex, 1);
-    setBlockTopRoot(blockTopRoot);
+    const newBlockData = removeBlock(blockId, blockData);
 
-    const { [blockId]: string, ...obj } = blockData;
-    setBlockData(obj);
+    newBlockData[rootBlock?.id].branch = newBlockBranch;
+
+    setBlockData({ ...newBlockData });
   };
 
   const actionFocusMove = (blockRefIndex: number, focusOption: FocusOption) => {
-    console.log("blockRefIndex", blockRefIndex);
-    console.log("focusOption", FocusOption[focusOption]);
-
     const beMovedBlockRef = blockRef.current[blockRefIndex + focusOption];
 
     setTimeout(() => {
       beMovedBlockRef?.focus();
-      console.log("beMovedBlockRef", beMovedBlockRef);
       if (beMovedBlockRef != null) {
         window.getSelection()?.selectAllChildren(beMovedBlockRef);
         window.getSelection()?.collapseToEnd();
@@ -318,7 +305,7 @@ export default function Editor() {
     depth: number = 0
   ): any => {
     return blockTopRoot?.map((blockId) => {
-      const data = blockData[blockId];
+      const data = getBlock(blockId, blockData);
       rowCount++;
       return (
         <Fragment key={blockId}>
