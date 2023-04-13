@@ -59,12 +59,28 @@ export const getPrevBlock = (
   const rootBlockBranch = rootBlock?.branch;
   const blockOrderIndex = rootBlockBranch?.indexOf(baseBlockId) as number;
 
-  if (blockOrderIndex <= 0) return;
   if (!rootBlockBranch) return;
+  if (blockOrderIndex <= 0) return;
 
   const prevBlockId = rootBlockBranch[blockOrderIndex - 1];
 
   return getBlock(prevBlockId, blocksObj);
+};
+
+export const getNextBlock = (
+  baseBlockId: string,
+  blocksObj: { [id: string]: Block }
+) => {
+  const rootBlock = getRootBlock(baseBlockId, blocksObj);
+  const rootBlockBranch = rootBlock?.branch;
+  const blockOrderIndex = rootBlockBranch?.indexOf(baseBlockId) as number;
+
+  if (!rootBlockBranch) return;
+  if (blockOrderIndex >= rootBlockBranch.length - 1) return;
+
+  const nextBlockId = rootBlockBranch[blockOrderIndex + 1];
+
+  return getBlock(nextBlockId, blocksObj);
 };
 
 export const getRootBlock = (

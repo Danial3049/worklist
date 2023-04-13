@@ -7,6 +7,7 @@ import {
   createBlock,
   getBlock,
   getBlockType,
+  getNextBlock,
   getPrevBlock,
   getRootBlock,
   getTopRootBlockId,
@@ -91,12 +92,24 @@ export default function Editor() {
 
     console.log("window.getSelection()", window.getSelection());
     // console.log("blockElement.target", blockElement.caretPosition);
-    if (blockElement.key === "ArrowDown") {
+
+    if (blockElement.key === "ArrowUp" && blockElement.ctrlKey === true) {
+      blockElement.preventDefault();
+      console.log("Move Up");
+      actionBlockMove(blockId, blockRefIndex, -1);
+    }
+    if (blockElement.key === "ArrowDown" && blockElement.ctrlKey === true) {
+      blockElement.preventDefault();
+      console.log("Move Down");
+      actionBlockMove(blockId, blockRefIndex, 1);
+    }
+
+    if (blockElement.key === "ArrowDown" && blockElement.ctrlKey !== true) {
       blockElement.preventDefault();
       actionFocusMove(blockRefIndex, FocusOption.DOWN);
     }
 
-    if (blockElement.key === "ArrowUp") {
+    if (blockElement.key === "ArrowUp" && blockElement.ctrlKey !== true) {
       blockElement.preventDefault();
       actionFocusMove(blockRefIndex, FocusOption.UP);
     }
@@ -108,7 +121,7 @@ export default function Editor() {
 
     if (blockElement.key === "Tab" && blockElement.shiftKey === true) {
       blockElement.preventDefault();
-      actionOutdent(blockId, blockRefIndex);
+      actionOutdent(blockId);
       setTimeout(() => {
         actionFocusMove(blockRefIndex, FocusOption.MAINTAIN);
       }, 0);
@@ -156,6 +169,90 @@ export default function Editor() {
     }
   };
 
+  const actionBlockMove = (
+    blockId: string,
+    blockRef: number,
+    postion: number
+  ) => {
+    const rootBlock = getRootBlock(blockId, blockData);
+    const block = getBlock(blockId, blockData);
+    const rootBlockBranch = rootBlock?.branch;
+
+    if (!rootBlockBranch) return;
+
+    const blockIndex = rootBlockBranch.indexOf(blockId);
+
+    //TODO: getPrevBlock으로 단순화 시킬 수 있을 것 같음
+    if (postion < 0 && blockIndex <= 0) {
+      const prevRootBlock = getPrevBlock(rootBlock.id, blockData);
+
+      if (prevRootBlock?.branch) {
+        const newPrevRootBlockBranch = insertBlockAtBranch(
+          blockId,
+          prevRootBlock.branch,
+          "last"
+        );
+
+        const newRootBlockBranch = removeBlockAtBranch(
+          blockId,
+          rootBlockBranch
+        );
+
+        const newBlockData = blockData;
+
+        newBlockData[prevRootBlock.id].branch = newPrevRootBlockBranch;
+        newBlockData[rootBlock.id].branch = newRootBlockBranch;
+        newBlockData[blockId].root = prevRootBlock.id;
+
+        setBlockData({ ...newBlockData });
+      } else {
+        actionOutdent(blockId, true, "prev");
+      }
+
+      setTimeout(() => {
+        actionFocusMove(blockRef, FocusOption.UP);
+      }, 0);
+    } else if (postion > 0 && rootBlockBranch.length - 1 <= blockIndex) {
+      const nextRootBlock = getNextBlock(rootBlock.id, blockData);
+
+      if (nextRootBlock?.branch) {
+        const newPrevRootBlockBranch = insertBlockAtBranch(
+          blockId,
+          nextRootBlock.branch,
+          "first"
+        );
+
+        const newRootBlockBranch = removeBlockAtBranch(
+          blockId,
+          rootBlockBranch
+        );
+
+        const newBlockData = blockData;
+
+        newBlockData[nextRootBlock.id].branch = newPrevRootBlockBranch;
+        newBlockData[rootBlock.id].branch = newRootBlockBranch;
+        newBlockData[blockId].root = nextRootBlock.id;
+
+        setBlockData({ ...newBlockData });
+      } else {
+        actionOutdent(blockId, true, "next");
+      }
+      setTimeout(() => {
+        actionFocusMove(blockRef, FocusOption.DOWN);
+      }, 0);
+    } else {
+      let tmp = rootBlockBranch[blockIndex];
+      rootBlockBranch[blockIndex] = rootBlockBranch[blockIndex + postion];
+      rootBlockBranch[blockIndex + postion] = tmp;
+    }
+
+    const newBlockData = blockData;
+
+    newBlockData[rootBlock.id].branch = rootBlockBranch;
+
+    setBlockData({ ...newBlockData });
+  };
+
   const actionIndent = (blockId: string, refIndex: number) => {
     const rootBlock = getRootBlock(blockId, blockData);
     const rootBlockBranch = rootBlock?.branch;
@@ -189,7 +286,11 @@ export default function Editor() {
     }, 0);
   };
 
-  const actionOutdent = (blockId: string, refIndex: number) => {
+  const actionOutdent = (
+    blockId: string,
+    optionMove: boolean = false,
+    postion: "prev" | "next" = "next"
+  ) => {
     const rootBlock = getRootBlock(blockId, blockData);
     const block = getBlock(blockId, blockData);
 
@@ -202,7 +303,7 @@ export default function Editor() {
     const newTwoStepRootBlockBranch = insertBlockAtBranch(
       blockId,
       twoStepRootBlockBranch,
-      "next",
+      optionMove ? postion : "next",
       rootBlock.id
     );
 
@@ -210,10 +311,14 @@ export default function Editor() {
     if (!rootBlockBranch) return;
 
     const blockIndex = rootBlockBranch.indexOf(blockId);
-    let newBlockBranch = rootBlockBranch.splice(
-      blockIndex + 1,
-      rootBlockBranch.length - (blockIndex + 1)
-    );
+
+    let newBlockBranch: string[] | undefined = [];
+    if (optionMove === false) {
+      newBlockBranch = rootBlockBranch.splice(
+        blockIndex + 1,
+        rootBlockBranch.length - (blockIndex + 1)
+      );
+    }
 
     const newRootBlockBranch = removeBlockAtBranch(blockId, rootBlockBranch);
 
@@ -222,14 +327,18 @@ export default function Editor() {
     newBlockData[rootBlock.id].branch = newRootBlockBranch;
     newBlockData[blockId].root = twoStepRootBlock?.id;
 
-    if (block.branch) {
-      newBlockBranch.unshift(...block.branch);
+    if (optionMove === false) {
+      if (block.branch) {
+        newBlockBranch.unshift(...block.branch);
+      }
+      newBlockBranch.forEach((nblockId) => {
+        newBlockData[nblockId].root = blockId;
+      });
+      if (newBlockBranch.length <= 0) {
+        newBlockBranch = undefined;
+      }
+      newBlockData[blockId].branch = newBlockBranch;
     }
-    newBlockBranch.forEach((nblockId) => {
-      newBlockData[nblockId].root = blockId;
-    });
-
-    newBlockData[blockId].branch = newBlockBranch;
 
     setBlockData({ ...newBlockData });
   };

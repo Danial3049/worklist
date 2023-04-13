@@ -60,7 +60,7 @@ const Wapper = styled.div((props: { depth: number }) => {
   return {
     display: "flex",
     marginBottom: "10px",
-    paddingLeft: `calc(20px * ${props?.depth})`,
+    paddingLeft: `calc(30px * ${props?.depth})`,
   };
 });
 
